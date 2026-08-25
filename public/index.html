@@ -279,103 +279,130 @@
 
   <!-- ajustes -->
   <div id="settings" class="modal" hidden>
-    <div class="modal-card">
-      <header class="modal-head">
+    <div class="modal-card admin-card">
+      <header class="modal-head admin-head">
         <h2>Ajustes</h2>
-        <button id="settingsClose" class="icon-btn" title="Fechar"><svg class="ico"><use href="#i-x"/></svg></button>
+        <button id="settingsClose" class="side-head-btn" title="Fechar"><svg class="ico"><use href="#i-x"/></svg></button>
       </header>
-      <div class="modal-body">
-        <label class="setting">
-          <span class="setting-label">Microfone</span>
-          <select id="micSelect" class="setting-input"></select>
-        </label>
+      <div class="admin-body">
+        <nav class="admin-nav" id="settingsNav">
+          <button class="admin-tab is-active" type="button" data-pane="voz">Voz</button>
+          <button class="admin-tab" type="button" data-pane="video">Vídeo e tela</button>
+          <button class="admin-tab" type="button" data-pane="notificacoes">Notificações</button>
+          <button class="admin-tab" type="button" data-pane="aparencia">Aparência</button>
+          <button class="admin-tab" type="button" data-pane="perfil">Perfil</button>
+        </nav>
 
-        <div class="setting">
-          <div class="setting-head-row">
-            <span class="setting-label">Teste do microfone</span>
-            <button id="testVoiceBtn" type="button" class="btn-test-voice" title="Ouça sua própria voz em tempo real">
-              <svg class="ico" style="width:14px;height:14px;"><use href="#i-speaker"/></svg>
-              <span>Testar minha voz</span>
-            </button>
-          </div>
-          <div class="test-meter-wrap">
-            <div class="test-meter">
-              <i id="testBar"></i>
-              <div id="thresholdMarker" class="test-threshold-marker" style="left: 20%;" title="Limite do corte"></div>
+        <div class="modal-body" id="settingsPane">
+          <section data-pane="voz">
+            <label class="setting">
+              <span class="setting-label">Microfone</span>
+              <select id="micSelect" class="setting-input"></select>
+            </label>
+
+            <div class="setting">
+              <div class="setting-head-row">
+                <span class="setting-label">Teste do microfone</span>
+                <button id="testVoiceBtn" type="button" class="btn-test-voice" title="Ouça sua própria voz em tempo real">
+                  <svg class="ico" style="width:14px;height:14px;"><use href="#i-speaker"/></svg>
+                  <span>Testar minha voz</span>
+                </button>
+              </div>
+              <div class="test-meter-wrap">
+                <div class="test-meter">
+                  <i id="testBar"></i>
+                  <div id="thresholdMarker" class="test-threshold-marker" style="left: 20%;" title="Limite do corte"></div>
+                </div>
+              </div>
+              <small style="display:block;margin-top:6px;color:var(--txt-dim);font-size:12px;">
+                Fale para ver a barra se mover. O traço luminoso indica o <strong>limite de captação</strong> (sons abaixo dele são silenciados).
+              </small>
             </div>
-          </div>
-          <small style="display:block;margin-top:6px;color:var(--txt-dim);font-size:12px;">
-            Fale para ver a barra se mover. O traço luminoso indica o <strong>limite de captação</strong> (sons abaixo dele são silenciados).
-          </small>
+
+            <label class="setting" id="outputRow" hidden>
+              <span class="setting-label">Saída de som</span>
+              <select id="outSelect" class="setting-input"></select>
+            </label>
+
+            <label class="setting setting-check">
+              <input id="noiseCheck" type="checkbox" checked />
+              <span><strong>Supressão de Ruído</strong><br /><small>remove ruídos de fundo (ventilador, teclado) e corta o som quando você não fala</small></span>
+            </label>
+
+            <div id="noiseSensitivityRow" class="setting setting-sub">
+              <div class="setting-head-row">
+                <span class="setting-label">Limite de Captação (Sensibilidade)</span>
+                <span id="noiseThresholdVal" class="setting-val-badge">20%</span>
+              </div>
+              <input id="noiseThresholdRange" type="range" min="1" max="100" value="20" class="setting-range" />
+              <div class="range-labels">
+                <span>Mais sensível (1%)</span>
+                <span>Padrão (20%)</span>
+                <span>Menos sensível (100%)</span>
+              </div>
+            </div>
+
+            <label class="setting setting-check">
+              <input id="pttCheck" type="checkbox" />
+              <span><strong>Push-to-talk</strong><br /><small>falar só enquanto segurar <kbd>Espaço</kbd></small></span>
+            </label>
+
+            <p class="modal-note">
+              <kbd>Ctrl</kbd>+<kbd>M</kbd> muta · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> ensurdece ·
+              <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> zumbido
+            </p>
+          </section>
+
+          <section data-pane="video" hidden>
+            <label class="setting">
+              <span class="setting-label">Qualidade da transmissão de tela</span>
+              <select id="qualitySelect" class="setting-input">
+                <option value="720">720p · 30 fps — leve no upload</option>
+                <option value="1080" selected>1080p · 30 fps</option>
+                <option value="1080-60">1080p · 60 fps — para jogo</option>
+                <option value="source">Original — pesa bastante</option>
+              </select>
+            </label>
+          </section>
+
+          <section data-pane="notificacoes" hidden>
+            <label class="setting setting-check">
+              <input id="soundsCheck" type="checkbox" checked />
+              <span><strong>Sons da sala</strong><br /><small>entrar, sair, mensagem e zumbido</small></span>
+            </label>
+
+            <div class="setting">
+              <span class="setting-label">Ouvir os sons</span>
+              <div id="soundTest" class="sound-test"></div>
+            </div>
+
+            <label class="setting setting-check">
+              <input id="notifyCheck" type="checkbox" />
+              <span><strong>Avisar no sistema</strong><br /><small>notificação quando te mencionarem e a aba estiver escondida</small></span>
+            </label>
+
+            <label class="setting setting-check">
+              <input id="awayCheck" type="checkbox" checked />
+              <span><strong>Ausente automático</strong><br /><small>depois de 5 minutos parado</small></span>
+            </label>
+          </section>
+
+          <section data-pane="aparencia" hidden>
+            <label class="setting setting-check">
+              <input id="themeCheck" type="checkbox" />
+              <span><strong>Tema escuro</strong><br /><small>o claro é o padrão, no estilo Messenger</small></span>
+            </label>
+          </section>
+
+          <section data-pane="perfil" hidden>
+            <label class="setting">
+              <span class="setting-label">Apelido neste servidor</span>
+              <input id="nicknameInput" class="setting-input" type="text" maxlength="32" placeholder="seu nome de verdade, se deixar vazio" />
+            </label>
+            <button id="nicknameSaveBtn" type="button" class="btn-test-voice">Salvar apelido</button>
+            <small id="nicknameMsg" style="display:block;margin-top:8px;color:var(--txt-dim);font-size:12px;"></small>
+          </section>
         </div>
-
-        <label class="setting" id="outputRow" hidden>
-          <span class="setting-label">Saída de som</span>
-          <select id="outSelect" class="setting-input"></select>
-        </label>
-
-        <label class="setting">
-          <span class="setting-label">Qualidade da transmissão de tela</span>
-          <select id="qualitySelect" class="setting-input">
-            <option value="720">720p · 30 fps — leve no upload</option>
-            <option value="1080" selected>1080p · 30 fps</option>
-            <option value="1080-60">1080p · 60 fps — para jogo</option>
-            <option value="source">Original — pesa bastante</option>
-          </select>
-        </label>
-
-        <label class="setting setting-check">
-          <input id="noiseCheck" type="checkbox" checked />
-          <span><strong>Supressão de Ruído</strong><br /><small>remove ruídos de fundo (ventilador, teclado) e corta o som quando você não fala</small></span>
-        </label>
-
-        <div id="noiseSensitivityRow" class="setting setting-sub">
-          <div class="setting-head-row">
-            <span class="setting-label">Limite de Captação (Sensibilidade)</span>
-            <span id="noiseThresholdVal" class="setting-val-badge">20%</span>
-          </div>
-          <input id="noiseThresholdRange" type="range" min="1" max="100" value="20" class="setting-range" />
-          <div class="range-labels">
-            <span>Mais sensível (1%)</span>
-            <span>Padrão (20%)</span>
-            <span>Menos sensível (100%)</span>
-          </div>
-        </div>
-
-        <label class="setting setting-check">
-          <input id="pttCheck" type="checkbox" />
-          <span><strong>Push-to-talk</strong><br /><small>falar só enquanto segurar <kbd>Espaço</kbd></small></span>
-        </label>
-
-        <label class="setting setting-check">
-          <input id="themeCheck" type="checkbox" />
-          <span><strong>Tema escuro</strong><br /><small>o claro é o padrão, no estilo Messenger</small></span>
-        </label>
-
-        <label class="setting setting-check">
-          <input id="soundsCheck" type="checkbox" checked />
-          <span><strong>Sons da sala</strong><br /><small>entrar, sair, mensagem e zumbido</small></span>
-        </label>
-
-        <div class="setting">
-          <span class="setting-label">Ouvir os sons</span>
-          <div id="soundTest" class="sound-test"></div>
-        </div>
-
-        <label class="setting setting-check">
-          <input id="notifyCheck" type="checkbox" />
-          <span><strong>Avisar no sistema</strong><br /><small>notificação quando te mencionarem e a aba estiver escondida</small></span>
-        </label>
-
-        <label class="setting setting-check">
-          <input id="awayCheck" type="checkbox" checked />
-          <span><strong>Ausente automático</strong><br /><small>depois de 5 minutos parado</small></span>
-        </label>
-
-        <p class="modal-note">
-          <kbd>Ctrl</kbd>+<kbd>M</kbd> muta · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> ensurdece ·
-          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> zumbido
-        </p>
       </div>
     </div>
   </div>

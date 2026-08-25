@@ -65,6 +65,8 @@ const el = {
   liveMute: $('liveMute'), liveNone: $('liveNone'), statsLine: $('statsLine'),
 
   settings: $('settings'), settingsClose: $('settingsClose'),
+  settingsNav: $('settingsNav'), settingsPane: $('settingsPane'),
+  nicknameInput: $('nicknameInput'), nicknameSaveBtn: $('nicknameSaveBtn'), nicknameMsg: $('nicknameMsg'),
   micSelect: $('micSelect'), outputRow: $('outputRow'), outSelect: $('outSelect'),
   qualitySelect: $('qualitySelect'), pttCheck: $('pttCheck'), testBar: $('testBar'),
   testVoiceBtn: $('testVoiceBtn'),
@@ -2615,6 +2617,11 @@ function applyReaction({ id, emoji, who }) {
   paintReactions(id);
 }
 
+/** Nomes de quem reagiu, pra mostrar em cima do chip — "você" primeiro. */
+function nomesDeQuem(ids) {
+  return ids.map((uid) => uid === state.user?.id ? 'você' : (state.guildMembers.get(uid)?.name || 'alguém'));
+}
+
 function paintReactions(id) {
   const entry = state.messages.get(id);
   if (!entry) return;
@@ -2626,6 +2633,7 @@ function paintReactions(id) {
     chip.type = 'button';
     chip.dataset.mine = String(who.includes(state.user?.id));
     chip.textContent = `${emoji} ${who.length}`;
+    chip.title = nomesDeQuem(who).join(', ');
     chip.addEventListener('click', () => state.socket.emit('chat-react', { id, emoji }));
     entry.reactions.appendChild(chip);
   });
@@ -3055,6 +3063,10 @@ el.settingsBtn.addEventListener('click', () => {
   el.settings.hidden = false;
   loadDevices();
   buildTestMeter();
+
+  const eu = state.guildMembers.get(state.user?.id);
+  el.nicknameInput.value = (eu && eu.name !== eu.realName) ? eu.name : '';
+  el.nicknameMsg.textContent = '';
 });
 el.settingsClose.addEventListener('click', closeSettings);
 el.settings.addEventListener('click', (e) => { if (e.target === el.settings) closeSettings(); });
@@ -3065,6 +3077,35 @@ function closeSettings() {
   releaseTestMeter();   // o clone da faixa não fica ligado à toa
   el.testBar.style.width = '0%';
 }
+
+// Barra lateral de categorias dos ajustes — as seções já existem prontas no
+// HTML, só troca qual fica visível (nada de re-renderizar como no admin).
+el.settingsNav.addEventListener('click', (e) => {
+  const btn = e.target.closest('.admin-tab');
+  if (!btn) return;
+  el.settingsNav.querySelectorAll('.admin-tab').forEach((b) => b.classList.toggle('is-active', b === btn));
+  el.settingsPane.querySelectorAll('section').forEach((s) => setShown(s, s.dataset.pane === btn.dataset.pane));
+});
+
+el.nicknameSaveBtn.addEventListener('click', async () => {
+  if (!state.guild) return;
+  const apelido = el.nicknameInput.value.trim();
+  el.nicknameMsg.textContent = 'Salvando…';
+  try {
+    await api(`/guilds/${state.guild.id}/members/me/nickname`, {
+      method: 'PATCH', body: JSON.stringify({ nickname: apelido || null })
+    });
+    const eu = state.guildMembers.get(state.user.id);
+    if (eu) eu.name = apelido || eu.realName;
+    const novoNome = eu?.name || apelido || state.user.name;
+    if (state.me) state.me.name = novoNome;
+    renderMemberList();
+    if (state.voiceChannel) meuRosterPatch({ name: novoNome });
+    el.nicknameMsg.textContent = apelido ? 'Apelido salvo.' : 'Apelido removido — voltou ao seu nome.';
+  } catch (err) {
+    el.nicknameMsg.textContent = err.message || 'Não deu para salvar.';
+  }
+});
 
 async function loadDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return;
