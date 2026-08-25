@@ -1,0 +1,15 @@
+node_modules/
+
+# variáveis de ambiente — nunca vão para o repositório
+.env
+.env.*
+!.env.example
+
+# lixo de sistema e de editor
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log
+npm-debug.log*
+.vscode/
+.idea/

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sala</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ENTRADA -->
+<section id="gate" class="gate">
+  <div class="gate-card">
+    <div class="gate-lamp" aria-hidden="true"><span class="bulb"></span> fora do ar</div>
+    <h1 class="gate-title">Sala</h1>
+    <p class="gate-sub">Voz, tela e conversa para um grupo pequeno. Sem conta, sem instalar nada.</p>
+
+    <label class="field">
+      <span class="field-label">Nome do grupo</span>
+      <input id="roomInput" class="field-input mono" type="text" placeholder="ex: os-cria" autocomplete="off" spellcheck="false" maxlength="32" />
+    </label>
+
+    <label class="field">
+      <span class="field-label">Seu apelido</span>
+      <input id="nameInput" class="field-input" type="text" placeholder="ex: Ju" autocomplete="off" maxlength="24" />
+    </label>
+
+    <button id="enterBtn" class="btn btn-primary btn-block">Entrar no canal de voz</button>
+    <p id="gateError" class="gate-error" role="alert"></p>
+    <p class="gate-note">Quem tiver o mesmo nome de grupo cai na mesma sala. O microfone entra ligado — dá para mutar assim que entrar.</p>
+  </div>
+</section>
+
+<!-- APP -->
+<main id="app" class="app" hidden>
+  <header class="bar">
+    <div class="bar-id">
+      <span id="onair" class="onair" data-live="false"><span class="bulb"></span><span id="onairLabel">no ar</span></span>
+      <h1 id="roomName" class="bar-room mono">—</h1>
+    </div>
+    <div class="bar-actions">
+      <button id="copyBtn" class="btn btn-ghost" title="Copiar link do grupo">copiar link</button>
+      <button id="leaveBtn" class="btn btn-danger">sair</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- MESA: participantes -->
+    <aside class="deck" id="deckPane">
+      <h2 class="pane-title">na sala <span id="count" class="mono">0</span></h2>
+      <ul id="strips" class="strips"></ul>
+    </aside>
+
+    <!-- PALCO: telas -->
+    <section class="stage" id="stagePane">
+      <div id="stageEmpty" class="stage-empty">
+        <p class="stage-empty-title">Nenhuma tela sendo transmitida</p>
+        <p class="stage-empty-hint">Aperte <strong>transmitir tela</strong> aqui embaixo e escolha uma janela, uma aba ou o monitor inteiro.</p>
+      </div>
+      <div id="screens" class="screens"></div>
+    </section>
+
+    <!-- CHAT -->
+    <aside class="chat" id="chatPane">
+      <h2 class="pane-title">conversa</h2>
+      <ol id="log" class="log"></ol>
+      <div class="composer">
+        <div id="emojiRow" class="emoji-row"></div>
+        <div class="composer-line">
+          <input id="msgInput" class="field-input" type="text" placeholder="escreva…" autocomplete="off" maxlength="2000" />
+          <button id="recBtn" class="btn btn-round" title="Segure para gravar um áudio" aria-label="Gravar áudio">●</button>
+          <button id="sendBtn" class="btn btn-primary" aria-label="Enviar">enviar</button>
+        </div>
+        <p id="recHint" class="rec-hint" hidden>gravando <span id="recTime" class="mono">0:00</span> — solte para enviar</p>
+      </div>
+    </aside>
+  </div>
+
+  <nav class="dock">
+    <button id="micBtn" class="btn btn-dock" data-on="true">microfone ligado</button>
+    <button id="shareBtn" class="btn btn-dock">transmitir tela</button>
+    <div class="dock-tabs">
+      <button class="btn btn-tab is-active" data-pane="stagePane">palco</button>
+      <button class="btn btn-tab" data-pane="deckPane">pessoas</button>
+      <button class="btn btn-tab" data-pane="chatPane">conversa</button>
+    </div>
+  </nav>
+
+  <div id="floats" class="floats" aria-hidden="true"></div>
+  <div id="audios" class="sr-only"></div>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "concord",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Concord — sala de voz, tela e conversa para grupos pequenos",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "migrate": "node scripts/migrate.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "express": "^4.19.2",
+    "jose": "^6.2.10",
+    "postgres": "^3.4.9",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

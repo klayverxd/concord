@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0d1a" />
+<title>Concord</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+  <symbol id="i-speaker-off" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></symbol>
+  <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M9 9v3a3 3 0 0 0 5.1 2.1M15 11.2V6a3 3 0 0 0-5.6-1.5"/><path d="M5 11a7 7 0 0 0 10.3 6.2M19 11a6.9 6.9 0 0 1-.7 3"/><path d="M12 18v3"/><path d="M3 3l18 18"/></symbol>
+  <symbol id="i-headset" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><path d="M4 14h2a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5z"/><path d="M20 14h-2a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-5z"/></symbol>
+  <symbol id="i-headset-off" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 12.6-6.5M20 12.2V14"/><path d="M4 14h2a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5z"/><path d="M20 14h-2a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-5z"/><path d="M3 3l18 18"/></symbol>
+  <symbol id="i-screen" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-hangup" viewBox="0 0 24 24"><path d="M3.5 10.8c4.7-3.9 12.3-3.9 17 0l-1.5 2.5a1.9 1.9 0 0 1-2.3.8l-2.2-.9a1.4 1.4 0 0 1-.8-1.5l.2-1.2a11 11 0 0 0-3.8 0l.2 1.2a1.4 1.4 0 0 1-.8 1.5l-2.2.9a1.9 1.9 0 0 1-2.3-.8L3.5 10.8z"/><path d="M4 20L20 4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-1.9a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
+  <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.2a4.6 4.6 0 0 0 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
+  <symbol id="i-signal" viewBox="0 0 24 24"><path d="M4 20v-4M10 20V10M16 20V14M22 20V4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.2a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 17l-5-5 5-5"/><path d="M4 12h11a5 5 0 0 1 5 5v3"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+</svg>
+
+<!-- ENTRADA -->
+<section id="gate" class="gate">
+  <div class="gate-glow" aria-hidden="true"></div>
+  <div class="gate-card">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1 class="brand-name">Concord</h1>
+    </div>
+
+    <!-- Estado inicial: nao sabemos ainda se ha sessao. Mostrar o botao de
+         login aqui fazia a tela de "entre com o Google" piscar em quem ja
+         estava logado. O app.js decide em seguida, de forma sincrona. -->
+    <div id="gateLoading">
+      <p class="gate-sub">Carregando sua sessão…</p>
+      <div class="gate-bar"><i></i></div>
+    </div>
+
+    <!-- login -->
+    <div id="gateLogin" hidden>
+      <p class="gate-sub">Voz, tela e conversa para um grupo pequeno.</p>
+      <button id="googleBtn" class="btn btn-primary btn-block">
+        <svg class="ico" viewBox="0 0 24 24" style="stroke:none"><path fill="currentColor" d="M21.35 11.1h-9.17v2.96h5.27c-.23 1.35-1.6 3.96-5.27 3.96-3.17 0-5.76-2.63-5.76-5.87S9.01 6.28 12.18 6.28c1.8 0 3.01.77 3.7 1.43l2.52-2.43C16.78 3.78 14.68 2.9 12.18 2.9 7.03 2.9 2.86 7.07 2.86 12.2s4.17 9.3 9.32 9.3c5.38 0 8.94-3.78 8.94-9.1 0-.61-.07-1.08-.17-1.3z"/></svg>
+        <span>Entrar com o Google</span>
+      </button>
+      <p id="gateStatus" class="gate-status" hidden></p>
+      <p id="gateError" class="gate-error" role="alert"></p>
+      <p class="gate-note">A conta serve só para saber quem é quem nos seus servidores.</p>
+    </div>
+
+    <!-- escolher servidor -->
+    <div id="gatePick" hidden>
+      <p class="gate-sub">Olá, <strong id="pickName">—</strong>.<br />Escolha um servidor ou crie o seu.</p>
+      <ul id="guildPick" class="guild-pick"></ul>
+
+      <label class="field">
+        <span class="field-label">Criar um servidor</span>
+        <div class="field-row">
+          <input id="newGuildInput" class="field-input" type="text" placeholder="Os Cria" maxlength="60" />
+          <button id="newGuildBtn" class="btn btn-primary">Criar</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Entrar com um convite</span>
+        <div class="field-row">
+          <input id="inviteInput" class="field-input mono" type="text" placeholder="ABCD2345" maxlength="16" spellcheck="false" />
+          <button id="inviteBtn" class="btn btn-dark">Entrar</button>
+        </div>
+      </label>
+
+      <p id="pickError" class="gate-error" role="alert"></p>
+      <button id="logoutBtn" class="gate-link">sair da conta</button>
+    </div>
+  </div>
+</section>
+
+<!-- APP -->
+<div id="app" class="app" hidden>
+
+  <nav class="rail">
+    <div id="railHome" class="rail-icon is-active" title="Concord"><span id="railInitials" class="mono">CO</span></div>
+    <div class="rail-sep"></div>
+    <button id="railCopy" class="rail-icon rail-btn" title="Copiar convite"><svg class="ico"><use href="#i-link"/></svg></button>
+  </nav>
+
+  <aside id="sidebar" class="sidebar">
+    <header class="side-head">
+      <span id="roomName" class="side-room">—</span>
+      <button id="copyBtn" class="side-head-btn" title="Copiar link do convite"><svg class="ico"><use href="#i-link"/></svg></button>
+    </header>
+
+    <div class="channels">
+      <h3 class="group-title">Canais de voz</h3>
+      <button class="channel is-active" id="voiceChannel" data-view="stage">
+        <svg class="ico"><use href="#i-speaker"/></svg>
+        <span class="channel-name">Geral</span>
+        <span class="live-badge" id="liveBadge" hidden>ao vivo</span>
+      </button>
+      <ul id="voiceMembers" class="voice-members"></ul>
+
+      <h3 class="group-title">Canais de texto</h3>
+      <button class="channel" id="textChannel" data-view="chat">
+        <svg class="ico"><use href="#i-hash"/></svg>
+        <span class="channel-name">geral</span>
+        <span class="unread-pill" id="unreadPill" hidden>0</span>
+      </button>
+    </div>
+
+    <div class="voice-status">
+      <div class="vs-line">
+        <svg class="ico vs-ico"><use href="#i-signal"/></svg>
+        <div class="vs-text">
+          <strong id="vsState">Voz conectada</strong>
+          <small id="vsRoom" class="mono">—</small>
+        </div>
+        <button id="leaveBtn" class="vs-hangup" title="Desconectar"><svg class="ico"><use href="#i-hangup"/></svg></button>
+      </div>
+      <button id="shareBtn" class="vs-share"><svg class="ico"><use href="#i-screen"/></svg><span>Transmitir tela</span></button>
+    </div>
+
+    <div class="userbar">
+      <button id="meCard" class="userbar-card" title="Mudar status e recado">
+        <span id="meAvatar" class="avatar avatar-sm"></span>
+        <span class="userbar-id">
+          <strong id="meName">—</strong>
+          <small id="meNote">disponível</small>
+        </span>
+      </button>
+      <button id="micBtn" class="icon-btn" data-on="true" title="Microfone (Ctrl+M)"><svg class="ico"><use href="#i-mic"/></svg></button>
+      <button id="deafBtn" class="icon-btn" data-on="true" title="Som geral (Ctrl+Shift+D)"><svg class="ico"><use href="#i-headset"/></svg></button>
+      <button id="adminBtn" class="icon-btn" title="Administrar servidor" hidden><svg class="ico"><use href="#i-users"/></svg></button>
+      <button id="settingsBtn" class="icon-btn" title="Ajustes"><svg class="ico"><use href="#i-gear"/></svg></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button id="menuBtn" class="icon-btn only-narrow" title="Canais"><svg class="ico"><use href="#i-menu"/></svg></button>
+      <svg class="ico topbar-ico" id="topbarIco"><use href="#i-speaker"/></svg>
+      <h2 id="viewTitle">Geral</h2>
+      <span id="viewSub" class="topbar-sub"></span>
+      <div class="topbar-actions">
+        <button id="nudgeBtn" class="icon-btn" title="Zumbido — chacoalha a tela de todo mundo"><svg class="ico"><use href="#i-zap"/></svg></button>
+        <button id="soundBtn" class="icon-btn" title="Sons"><svg class="ico"><use href="#i-music"/></svg></button>
+        <button id="membersBtn" class="icon-btn" title="Mostrar pessoas"><svg class="ico"><use href="#i-users"/></svg></button>
+      </div>
+    </header>
+
+    <section id="stageView" class="stage">
+      <div id="stageEmpty" class="stage-empty" hidden>
+        <svg class="ico"><use href="#i-speaker"/></svg>
+        <p><strong>Você não está num canal de voz.</strong></p>
+        <p>Clique num canal de voz na lista ao lado para entrar. A transmissão de tela também passa por ele.</p>
+      </div>
+      <div id="tiles" class="tiles"></div>
+      <div class="stage-foot">
+        <button id="stageShareBtn" class="btn btn-dark"><svg class="ico"><use href="#i-screen"/></svg><span id="stageShareLabel">Transmitir tela</span></button>
+        <button id="stageMicBtn" class="btn btn-dark" data-on="true"><svg class="ico"><use href="#i-mic"/></svg><span id="stageMicLabel">Microfone</span></button>
+        <button id="stageLeaveBtn" class="btn btn-danger"><svg class="ico"><use href="#i-hangup"/></svg><span>Sair</span></button>
+      </div>
+    </section>
+
+    <section id="chatView" class="chatview" hidden>
+      <ol id="log" class="log"></ol>
+      <p id="typing" class="typing"></p>
+      <div class="composer">
+        <div id="emojiPop" class="pop emoji-pop" hidden></div>
+        <div id="replyBar" class="reply-bar" hidden>
+          <svg class="ico"><use href="#i-reply"/></svg>
+          <span id="replyText" class="reply-text"></span>
+          <button id="replyCancel" class="composer-btn" title="Cancelar"><svg class="ico"><use href="#i-x"/></svg></button>
+        </div>
+        <!-- barra de ferramentas, como na janela de conversa do Messenger -->
+        <div class="composer-tools">
+          <button id="emojiBtn" class="tool-btn" title="Emoticons e reações"><svg class="ico"><use href="#i-smile"/></svg></button>
+          <button id="imageBtn" class="tool-btn" title="Enviar imagem"><svg class="ico"><use href="#i-image"/></svg></button>
+          <button id="recBtn" class="tool-btn" title="Segure para gravar um áudio"><svg class="ico"><use href="#i-mic"/></svg></button>
+          <span class="tool-sep"></span>
+          <button id="toolNudge" class="tool-btn" title="Zumbido — chacoalha a tela de todo mundo"><svg class="ico"><use href="#i-zap"/></svg></button>
+          <button id="toolSound" class="tool-btn" title="Sons"><svg class="ico"><use href="#i-music"/></svg></button>
+        </div>
+        <div class="composer-box">
+          <input id="msgInput" class="composer-input" type="text" placeholder="Conversar em #geral" autocomplete="off" maxlength="2000" />
+          <button id="sendBtn" class="composer-btn composer-send" title="Enviar"><svg class="ico"><use href="#i-send"/></svg></button>
+        </div>
+        <p id="recHint" class="rec-hint" hidden>gravando <span id="recTime" class="mono">0:00</span> — solte para enviar</p>
+        <p id="editHint" class="edit-hint" hidden>editando — <kbd>Esc</kbd> cancela</p>
+      </div>
+      <input id="fileInput" type="file" accept="image/*" hidden />
+    </section>
+  </main>
+
+  <aside id="membersPane" class="members">
+    <h3 class="group-title">Online — <span id="count" class="mono">0</span></h3>
+    <ul id="memberList" class="member-list"></ul>
+  </aside>
+
+  <!-- status e recado, no espírito do Messenger -->
+  <div id="statusPop" class="pop status-pop" hidden>
+    <span class="pop-title">Seu status</span>
+    <ul class="status-list" id="statusList"></ul>
+    <label class="pop-field">
+      <span class="pop-label">Recado</span>
+      <input id="noteInput" class="pop-input" type="text" maxlength="80" placeholder="o que você quiser dizer…" />
+    </label>
+  </div>
+
+  <!-- volume de uma pessoa -->
+  <div id="volumePop" class="pop volume-pop" hidden>
+    <strong id="volumeName" class="pop-title">—</strong>
+    <div class="volume-section">
+      <span class="volume-kind">Voz</span>
+      <div class="volume-line">
+        <svg class="ico"><use href="#i-mic"/></svg>
+        <input id="volumeRange" class="volume-range" type="range" min="0" max="100" step="1" value="100" />
+        <span id="volumeValue" class="volume-value mono">100</span>
+      </div>
+      <label class="volume-mute"><input id="volumeMute" type="checkbox" /><span>silenciar a voz</span></label>
+    </div>
+    <div class="volume-section" id="liveSection" hidden>
+      <span class="volume-kind">Transmissão</span>
+      <div class="volume-line">
+        <svg class="ico"><use href="#i-screen"/></svg>
+        <input id="liveRange" class="volume-range" type="range" min="0" max="100" step="1" value="100" />
+        <span id="liveValue" class="volume-value mono">100</span>
+      </div>
+      <label class="volume-mute"><input id="liveMute" type="checkbox" /><span>silenciar a transmissão</span></label>
+    </div>
+    <div class="volume-section" id="statsSection">
+      <span class="volume-kind">Conexão</span>
+      <p id="statsLine" class="stats-line mono">medindo…</p>
+    </div>
+    <p id="liveNone" class="volume-none" hidden>Esta transmissão veio sem som.</p>
+  </div>
+
+  <!-- sons -->
+  <div id="soundPop" class="pop sound-pop" hidden>
+    <span class="pop-title">Sons — todo mundo ouve</span>
+    <div id="soundGrid" class="sound-grid"></div>
+  </div>
+
+  <!-- ajustes -->
+  <div id="settings" class="modal" hidden>
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2>Ajustes</h2>
+        <button id="settingsClose" class="icon-btn" title="Fechar"><svg class="ico"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="modal-body">
+        <label class="setting">
+          <span class="setting-label">Microfone</span>
+          <select id="micSelect" class="setting-input"></select>
+        </label>
+
+        <div class="setting">
+          <span class="setting-label">Teste — fale e veja a barra andar</span>
+          <div class="test-meter"><i id="testBar"></i></div>
+        </div>
+
+        <label class="setting" id="outputRow" hidden>
+          <span class="setting-label">Saída de som</span>
+          <select id="outSelect" class="setting-input"></select>
+        </label>
+
+        <label class="setting">
+          <span class="setting-label">Qualidade da transmissão de tela</span>
+          <select id="qualitySelect" class="setting-input">
+            <option value="720">720p · 30 fps — leve no upload</option>
+            <option value="1080" selected>1080p · 30 fps</option>
+            <option value="1080-60">1080p · 60 fps — para jogo</option>
+            <option value="source">Original — pesa bastante</option>
+          </select>
+        </label>
+
+        <label class="setting setting-check">
+          <input id="pttCheck" type="checkbox" />
+          <span><strong>Push-to-talk</strong><br /><small>falar só enquanto segurar <kbd>Espaço</kbd></small></span>
+        </label>
+
+        <label class="setting setting-check">
+          <input id="themeCheck" type="checkbox" />
+          <span><strong>Tema escuro</strong><br /><small>o claro é o padrão, no estilo Messenger</small></span>
+        </label>
+
+        <label class="setting setting-check">
+          <input id="soundsCheck" type="checkbox" checked />
+          <span><strong>Sons da sala</strong><br /><small>entrar, sair, mensagem e zumbido</small></span>
+        </label>
+
+        <div class="setting">
+          <span class="setting-label">Ouvir os sons</span>
+          <div id="soundTest" class="sound-test"></div>
+        </div>
+
+        <label class="setting setting-check">
+          <input id="notifyCheck" type="checkbox" />
+          <span><strong>Avisar no sistema</strong><br /><small>notificação quando te mencionarem e a aba estiver escondida</small></span>
+        </label>
+
+        <label class="setting setting-check">
+          <input id="awayCheck" type="checkbox" checked />
+          <span><strong>Ausente automático</strong><br /><small>depois de 5 minutos parado</small></span>
+        </label>
+
+        <p class="modal-note">
+          <kbd>Ctrl</kbd>+<kbd>M</kbd> muta · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> ensurdece ·
+          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> zumbido
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- administração do servidor -->
+  <div id="admin" class="modal" hidden>
+    <div class="modal-card admin-card">
+      <header class="modal-head admin-head">
+        <h2 id="adminTitle">Administrar servidor</h2>
+        <button id="adminClose" class="side-head-btn" title="Fechar"><svg class="ico"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="admin-body">
+        <nav class="admin-nav" id="adminNav">
+          <button class="admin-tab is-active" data-pane="servidor">Servidor</button>
+          <button class="admin-tab" data-pane="canais">Canais</button>
+          <button class="admin-tab" data-pane="cargos">Cargos</button>
+          <button class="admin-tab" data-pane="pessoas">Pessoas</button>
+          <button class="admin-tab" data-pane="convites">Convites</button>
+          <button class="admin-tab" data-pane="registro">Registro</button>
+        </nav>
+        <div class="admin-pane" id="adminPane"></div>
+      </div>
+      <p id="adminMsg" class="admin-msg" role="status"></p>
+    </div>
+  </div>
+
+  <button id="audioUnlock" class="audio-unlock" hidden>
+    <svg class="ico"><use href="#i-headset-off"/></svg>
+    <span>O navegador bloqueou o som. Toque aqui para liberar.</span>
+  </button>
+
+  <div id="dropZone" class="drop-zone" hidden><span>Solte a imagem para enviar</span></div>
+  <div id="scrim" class="scrim"></div>
+  <div id="toast" class="toast" hidden></div>
+  <div id="floats" class="floats" aria-hidden="true"></div>
+  <div id="audios" class="sr-only"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
