@@ -103,6 +103,7 @@ const state = {
   // barra lateral, o que é o que faltava para a lista não desaparecer.
   channelVoice: new Map(), rosterEls: new Map(),
   audioCtx: null, micSource: null, mixDest: null, noiseNode: null, noiseWorkletLoaded: false,
+  rnnoiseNode: null, rnnoiseWorkletLoaded: false, rnnoiseWasmBytes: null, audioOutNode: null,
   messages: new Map(),  // id -> { msg, node }
   lastMsg: null, typers: new Map(), typingSentAt: 0,
   replyTo: null, editing: null,
@@ -1591,13 +1592,28 @@ function startAudioContext() {
   state.mixDest = state.audioCtx.createMediaStreamDestination();
   state.outStream = state.mixDest.stream;
   
-  // Carrega o Noise Gate (Supressão de Ruído Avançada)
+  // Supressão de ruído em duas etapas: RNNoise (rede neural, remove ruído
+  // misturado com a voz) seguido do noise gate (corta o silêncio de vez).
+  // Cada módulo carrega de forma independente — se um falhar, a cadeia usa
+  // só o que deu certo em vez de desistir da supressão inteira.
   if (state.audioCtx.audioWorklet) {
+    // fetch() não existe dentro do AudioWorkletGlobalScope — os bytes do
+    // .wasm precisam ser buscados aqui fora e entregues prontos ao worklet.
+    Promise.all([
+      state.audioCtx.audioWorklet.addModule('/lib/rnnoise-processor.js'),
+      fetch('/lib/rnnoise.wasm').then((r) => r.arrayBuffer())
+    ]).then(([, wasmBytes]) => {
+      state.rnnoiseWasmBytes = wasmBytes;
+      state.rnnoiseWorkletLoaded = true;
+      connectMicToMix();
+    }).catch(e => {
+      console.error('Erro ao carregar o RNNoise:', e);
+    });
     state.audioCtx.audioWorklet.addModule('/lib/noise-processor.js').then(() => {
       state.noiseWorkletLoaded = true;
       connectMicToMix();
     }).catch(e => {
-      console.error('Erro ao carregar supressão de ruído:', e);
+      console.error('Erro ao carregar o noise gate:', e);
       connectMicToMix();
     });
   } else {
@@ -1610,20 +1626,34 @@ function startAudioContext() {
 function connectMicToMix() {
   if (!state.audioCtx || !state.mic) return;
   try { state.micSource?.disconnect(); } catch (_) {}
+  try { state.rnnoiseNode?.disconnect(); } catch (_) {}
   try { state.noiseNode?.disconnect(); } catch (_) {}
-  
+
   state.micSource = state.audioCtx.createMediaStreamSource(state.mic);
-  
+
+  let ultimoNo = state.micSource;
+
+  if (state.noiseSuppression && state.rnnoiseWorkletLoaded) {
+    if (!state.rnnoiseNode) {
+      state.rnnoiseNode = new AudioWorkletNode(state.audioCtx, 'rnnoise-denoiser', {
+        processorOptions: { wasmBinary: state.rnnoiseWasmBytes }
+      });
+    }
+    ultimoNo.connect(state.rnnoiseNode);
+    ultimoNo = state.rnnoiseNode;
+  }
+
   if (state.noiseSuppression && state.noiseWorkletLoaded) {
     if (!state.noiseNode) {
       state.noiseNode = new AudioWorkletNode(state.audioCtx, 'noise-gate-processor');
     }
     try { state.noiseNode.port.postMessage({ threshold: getNoiseThreshold() }); } catch (_) {}
-    state.micSource.connect(state.noiseNode);
-    state.noiseNode.connect(state.mixDest);
-  } else {
-    state.micSource.connect(state.mixDest);
+    ultimoNo.connect(state.noiseNode);
+    ultimoNo = state.noiseNode;
   }
+
+  ultimoNo.connect(state.mixDest);
+  state.audioOutNode = ultimoNo;
 
   if (testVoiceActive) {
     updateTestVoiceRoute();
@@ -1708,6 +1738,7 @@ function stopTestVoice() {
   if (testVoiceGain) {
     try { testVoiceGain.disconnect(); } catch (_) {}
   }
+  try { state.rnnoiseNode?.disconnect(testVoiceGain); } catch (_) {}
   try { state.noiseNode?.disconnect(testVoiceGain); } catch (_) {}
   try { state.micSource?.disconnect(testVoiceGain); } catch (_) {}
 }
@@ -1715,17 +1746,14 @@ function stopTestVoice() {
 function updateTestVoiceRoute() {
   if (!testVoiceActive || !state.audioCtx || !testVoiceGain) return;
 
+  try { state.rnnoiseNode?.disconnect(testVoiceGain); } catch (_) {}
   try { state.noiseNode?.disconnect(testVoiceGain); } catch (_) {}
   try { state.micSource?.disconnect(testVoiceGain); } catch (_) {}
   try { testVoiceGain.disconnect(); } catch (_) {}
 
   testVoiceGain.connect(state.audioCtx.destination);
 
-  if (state.noiseSuppression && state.noiseWorkletLoaded && state.noiseNode) {
-    state.noiseNode.connect(testVoiceGain);
-  } else if (state.micSource) {
-    state.micSource.connect(testVoiceGain);
-  }
+  if (state.audioOutNode) state.audioOutNode.connect(testVoiceGain);
 }
 
 /* ------------------------------ sons ------------------------------ *
@@ -2058,19 +2086,31 @@ function buildTestMeter() {
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.6;
 
-  if (state.noiseSuppression && state.noiseWorkletLoaded) {
+  let ultimoNo = source;
+  let testRnnoiseNode = null;
+  let testNoiseNode = null;
+
+  if (state.noiseSuppression && state.rnnoiseWorkletLoaded) {
     try {
-      const testNoiseNode = new AudioWorkletNode(state.audioCtx, 'noise-gate-processor');
-      try { testNoiseNode.port.postMessage({ threshold: getNoiseThreshold() }); } catch (_) {}
-      source.connect(testNoiseNode);
-      testNoiseNode.connect(analyser);
-      testMeter = { clone, analyser, testNoiseNode, buf: new Uint8Array(analyser.frequencyBinCount) };
-      return;
-    } catch (_) {}
+      testRnnoiseNode = new AudioWorkletNode(state.audioCtx, 'rnnoise-denoiser', {
+        processorOptions: { wasmBinary: state.rnnoiseWasmBytes }
+      });
+      ultimoNo.connect(testRnnoiseNode);
+      ultimoNo = testRnnoiseNode;
+    } catch (_) { testRnnoiseNode = null; }
   }
 
-  source.connect(analyser);
-  testMeter = { clone, analyser, buf: new Uint8Array(analyser.frequencyBinCount) };
+  if (state.noiseSuppression && state.noiseWorkletLoaded) {
+    try {
+      testNoiseNode = new AudioWorkletNode(state.audioCtx, 'noise-gate-processor');
+      testNoiseNode.port.postMessage({ threshold: getNoiseThreshold() });
+      ultimoNo.connect(testNoiseNode);
+      ultimoNo = testNoiseNode;
+    } catch (_) { testNoiseNode = null; }
+  }
+
+  ultimoNo.connect(analyser);
+  testMeter = { clone, analyser, testRnnoiseNode, testNoiseNode, buf: new Uint8Array(analyser.frequencyBinCount) };
 }
 
 function releaseTestMeter() {
