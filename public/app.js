@@ -445,6 +445,7 @@ async function abrirServidor(guildId) {
   state.joined = false;
   state.messages.clear();
   state.lastMsg = null;
+  state.channelVoice.clear(); // roster de voz é por servidor; o de outro fica atrás
   el.log.textContent = '';
   clearUnread();
 
@@ -649,11 +650,20 @@ function conectar() {
   socket.on('connect', () => {
     setVoiceState(state.voiceChannel ? 'Voz conectada' : 'Fora do canal', Boolean(state.voiceChannel));
     // Vale para a primeira vez e para a volta depois de uma queda.
+    if (state.guild) watchGuild(state.guild.id);
     if (state.textChannel) abrirTexto(state.textChannel);
     if (state.voiceChannel) entrarNaVoz(state.voiceChannel.id, true);
   });
 
+  /* peer-joined/left/state agora chegam para o servidor INTEIRO, não só
+   * para quem já está no canal — é o que a barra lateral precisa para
+   * mostrar ocupantes de qualquer canal sem exigir entrar. O roster
+   * (rosterUpsert/rosterRemove) é atualizado sempre; a parte "rica" — vídeo,
+   * WebRTC, painel Online — continua só para o canal em que EU estou. */
   socket.on('peer-joined', (p) => {
+    rosterUpsert(p.channelId, p);
+    if (p.channelId !== state.voiceChannel?.id) return;
+
     upsertMember({ ...p, mine: false });
     ensurePeer(p.id, p.name);
     system(`${p.name} entrou no canal`, 'in');
@@ -661,7 +671,10 @@ function conectar() {
     refreshCount();
   });
 
-  socket.on('peer-left', ({ id }) => {
+  socket.on('peer-left', ({ id, channelId }) => {
+    rosterRemove(channelId, id);
+    if (!state.members.has(id)) return; // não era do meu canal — nada de rico a limpar
+
     const peer = state.peers.get(id);
     if (peer) {
       peer.pc.close();
@@ -675,7 +688,9 @@ function conectar() {
     refreshCount();
   });
 
-  socket.on('peer-state', ({ id, muted, sharing, deaf, screenId }) => {
+  socket.on('peer-state', ({ id, channelId, muted, sharing, deaf, screenId }) => {
+    rosterUpsert(channelId, { id, muted, sharing, deaf });
+
     const m = state.members.get(id);
     if (!m) return;
     if (typeof muted === 'boolean') m.muted = muted;
@@ -747,6 +762,22 @@ function conectar() {
   });
 }
 
+/* Retrato de quem está em cada canal de voz do servidor, vindo direto do
+ * servidor — é o que permite mostrar ocupantes de um canal sem ter
+ * entrado nele. Chamado ao abrir o servidor e de novo em toda reconexão,
+ * porque salas de socket.io não sobrevivem à queda. */
+function watchGuild(guildId) {
+  state.socket?.emit('watch-guild', { guildId }, (r) => {
+    if (r?.error) return;
+    Object.entries(r.channels || {}).forEach(([chId, pessoas]) => {
+      const mapa = rosterDoCanal(chId);
+      mapa.clear();
+      pessoas.forEach((p) => mapa.set(p.id, p));
+      renderRoster(chId);
+    });
+  });
+}
+
 /* --------------------------- entrar e sair da voz --------------------------- */
 
 async function entrarNaVoz(channelId, religando) {
@@ -777,9 +808,19 @@ async function entrarNaVoz(channelId, religando) {
   });
   attachMeter(state.me.id, state.mic);
 
+  /* Eu mesmo nunca chego por `peer-joined` (o servidor exclui o remetente
+   * do broadcast) — então o roster deste canal só fica completo se eu me
+   * incluir aqui, e reafirmar os pares por segurança caso o retrato do
+   * `watch-guild` tenha chegado antes desta entrada existir. */
+  rosterUpsert(channelId, {
+    id: state.me.id, userId: state.user.id, name: state.me.name, avatar: state.user.avatar,
+    muted: false, sharing: false, deaf: state.deaf
+  });
+
   reply.peers.forEach((p) => {
     upsertMember({ ...p, mine: false });
     ensurePeer(p.id, p.name);
+    rosterUpsert(channelId, p);
   });
 
   const micOn = state.mic?.getAudioTracks()[0]?.enabled !== false;
@@ -799,6 +840,7 @@ function sairDaVoz() {
   playSound('desconectou');
   stopShare();
   state.socket?.emit('leave-voice');
+  rosterRemove(state.voiceChannel.id, state.me.id); // idem: não recebo peer-left de mim mesmo
   state.voiceChannel = null;
   state.joined = false;
   tearDownRoom();
@@ -1455,6 +1497,7 @@ async function startShare() {
   state.socket.emit('state', { sharing: true, screenId: stream.id });
   const me = state.members.get(state.me.id);
   if (me) { me.sharing = true; me.screenId = stream.id; paintMember(me.id); }
+  meuRosterPatch({ sharing: true });
   updateLive();
   setView('stage');
 
@@ -1478,6 +1521,7 @@ function stopShare() {
   state.socket.emit('state', { sharing: false, screenId: null });
   const me = state.members.get(state.me.id);
   if (me) { me.sharing = false; me.screenId = null; paintMember(me.id); }
+  meuRosterPatch({ sharing: false });
   updateLive();
 }
 
@@ -1928,6 +1972,7 @@ function setMic(on, comSom = false) {
   state.socket?.emit('state', { muted: !on });
   const me = state.members.get(state.me?.id);
   if (me) { me.muted = !on; paintMember(me.id); }
+  meuRosterPatch({ muted: !on });
 
   // Só soa quando algo mudou de fato, e nunca em push-to-talk.
   if (comSom && mudou) playSound(on ? 'desmudo' : 'mudo');
@@ -1957,6 +2002,7 @@ function toggleDeaf() {
   state.socket?.emit('state', { deaf: state.deaf });
   const me = state.members.get(state.me?.id);
   if (me) { me.deaf = state.deaf; paintMember(me.id); }
+  meuRosterPatch({ deaf: state.deaf });
 }
 
 /* ------------------------- medidores de voz ------------------------- */
