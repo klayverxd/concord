@@ -24,11 +24,16 @@ const el = {
   rail: document.querySelector('.rail'), channels: document.querySelector('.channels'),
 
   app: $('app'), scrim: $('scrim'), toast: $('toast'), dropZone: $('dropZone'),
+  callBanner: $('callBanner'), callBannerAvatar: $('callBannerAvatar'),
+  callBannerName: $('callBannerName'), callBannerChannel: $('callBannerChannel'),
+  callBannerAccept: $('callBannerAccept'), callBannerDecline: $('callBannerDecline'),
+  profilePop: $('profilePop'), profileAvatar: $('profileAvatar'), profileName: $('profileName'),
+  profileStatus: $('profileStatus'), profileRoles: $('profileRoles'), profileCallBtn: $('profileCallBtn'),
   railInitials: $('railInitials'), railCopy: $('railCopy'),
   sidebar: $('sidebar'), roomName: $('roomName'), copyBtn: $('copyBtn'),
   voiceChannel: $('voiceChannel'), textChannel: $('textChannel'),
   liveBadge: $('liveBadge'), unreadPill: $('unreadPill'),
-  voiceMembers: $('voiceMembers'), memberList: $('memberList'),
+  voiceMembers: $('voiceMembers'), membersPane: $('membersPane'),
   vsState: $('vsState'), vsRoom: $('vsRoom'),
   shareBtn: $('shareBtn'), leaveBtn: $('leaveBtn'),
   meCard: $('meCard'), meAvatar: $('meAvatar'), meName: $('meName'), meNote: $('meNote'),
@@ -84,6 +89,10 @@ const state = {
   token: null, user: null, guilds: [], guild: null,
   channels: [], roles: [], myPerms: '0',
   voiceChannel: null, textChannel: null,
+  // Todo mundo do servidor (não só quem está numa chamada) e quem, entre
+  // eles, está com o app aberto agora — o que a coluna da direita precisa
+  // para mostrar online/offline de verdade em vez de só presença de voz.
+  guildMembers: new Map(), presentUserIds: new Set(),
 
   me: null, room: null, name: null, socket: null, joined: false,
   mic: null,            // microfone cru vindo do getUserMedia
@@ -101,7 +110,7 @@ const state = {
   // quem entrou. channelId -> Map(socketId -> {id, userId, name, avatar,
   // muted, sharing, deaf}). Persiste através de qualquer redesenho da
   // barra lateral, o que é o que faltava para a lista não desaparecer.
-  channelVoice: new Map(), rosterEls: new Map(),
+  channelVoice: new Map(), rosterEls: new Map(), rosterMemberEls: new Map(),
   audioCtx: null, micSource: null, mixDest: null, noiseNode: null, noiseWorkletLoaded: false,
   rnnoiseNode: null, rnnoiseWorkletLoaded: false, rnnoiseWasmBytes: null, audioOutNode: null,
   messages: new Map(),  // id -> { msg, node }
@@ -411,6 +420,7 @@ async function abrirServidor(guildId) {
   state.channels = dados.channels;
   state.roles = dados.roles;
   state.myPerms = dados.me.permissions;
+  state.guildMembers = new Map((dados.members || []).map((m) => [m.id, m]));
   store.set('servidor', guildId);
 
   if (!state.mic) {
@@ -447,6 +457,8 @@ async function abrirServidor(guildId) {
   state.messages.clear();
   state.lastMsg = null;
   state.channelVoice.clear(); // roster de voz é por servidor; o de outro fica atrás
+  state.presentUserIds.clear();
+  renderMemberList();
   el.log.textContent = '';
   clearUnread();
 
@@ -479,6 +491,7 @@ function montarTela() {
 function desenharCanais() {
   el.channels.textContent = '';
   state.rosterEls.clear();
+  state.rosterMemberEls.clear();
 
   const grupo = (titulo) => {
     const h = document.createElement('h3');
@@ -589,6 +602,7 @@ function renderRoster(channelId) {
   if (!ul) return; // canal ainda não desenhado (ex.: chegou antes de montarTela)
 
   const pessoas = [...rosterDoCanal(channelId).values()];
+  const avatares = new Map(); // socketId -> avatar, para tickMeters achar sem varrer o DOM
   ul.textContent = '';
   pessoas.forEach((p) => {
     const li = document.createElement('li');
@@ -611,7 +625,19 @@ function renderRoster(channelId) {
 
     li.append(av, nome, icons);
     ul.appendChild(li);
+    avatares.set(p.id, av);
+
+    // No MESMO canal em que estou: clique ajusta o volume da pessoa (como
+    // antes, só que agora a partir do roster). Em outro canal: abre o
+    // perfil, de onde dá para chamar a pessoa para esta chamada.
+    li.addEventListener('click', () => {
+      if (p.userId === state.user?.id) return;
+      if (channelId === state.voiceChannel?.id) return openVolume(p.id, li);
+      const guildMember = state.guildMembers.get(p.userId);
+      if (guildMember) abrirPerfil(guildMember, li);
+    });
   });
+  state.rosterMemberEls.set(channelId, avatares);
 }
 
 function marcarAtivos() {
@@ -707,7 +733,7 @@ function conectar() {
     paintMember(id);
     if (sharing === false) clearVideo(id);
     if (state.volumeTarget === id && !el.volumePop.hidden) {
-      openVolume(id, state.nodes.get(id)?.mbtn || el.memberList);
+      openVolume(id, state.nodes.get(id)?.tile || el.tiles);
     }
     updateLive();
   });
@@ -718,6 +744,20 @@ function conectar() {
     m.status = status; m.note = note;
     paintMember(id);
   });
+
+  // Presença de SERVIDOR (app aberto, dentro ou fora de qualquer canal de
+  // voz) — o que a coluna "Online" usa para separar quem está de verdade
+  // conectado de quem só continua listado como membro do servidor.
+  socket.on('presence-join', ({ userId }) => {
+    state.presentUserIds.add(userId);
+    renderMemberList();
+  });
+  socket.on('presence-leave', ({ userId }) => {
+    state.presentUserIds.delete(userId);
+    renderMemberList();
+  });
+
+  socket.on('call-incoming', (convite) => mostrarChamadaEntrante(convite));
 
   socket.on('signal', handleSignal);
   socket.on('chat', (m) => renderMessage(m));
@@ -773,8 +813,57 @@ function watchGuild(guildId) {
       pessoas.forEach((p) => mapa.set(p.id, p));
       renderRoster(chId);
     });
+    state.presentUserIds = new Set(r.presentes || []);
+    renderMemberList();
   });
 }
+
+/* --------------------------- chamar alguém para a voz --------------------------- */
+
+/** Chama alguém do servidor que está online mas fora do canal — toca um
+ * convite nos dispositivos dela; aceitar já entra direto no canal. */
+function chamarParaVoz(userId, channelId) {
+  state.socket?.emit('call-invite', { userId, channelId }, (r) => {
+    if (r?.error) toast(r.error);
+    else toast('Chamada enviada.', 'ok');
+  });
+}
+
+let chamadaAtual = null;
+let chamadaTimer = null;
+let chamadaRingInterval = null;
+
+function mostrarChamadaEntrante(convite) {
+  chamadaAtual = convite;
+  paintAvatar(el.callBannerAvatar, convite.from.name);
+  el.callBannerName.textContent = `${convite.from.name} está te chamando`;
+  el.callBannerChannel.textContent = `Canal de voz: ${convite.channel.name}`;
+  el.callBanner.hidden = false;
+
+  playSound('chamada');
+  clearInterval(chamadaRingInterval);
+  chamadaRingInterval = setInterval(() => playSound('chamada'), 1300);
+
+  clearTimeout(chamadaTimer);
+  chamadaTimer = setTimeout(esconderChamadaEntrante, 30000);
+}
+
+function esconderChamadaEntrante() {
+  chamadaAtual = null;
+  el.callBanner.hidden = true;
+  clearInterval(chamadaRingInterval);
+  clearTimeout(chamadaTimer);
+}
+
+el.callBannerAccept.addEventListener('click', async () => {
+  const convite = chamadaAtual;
+  if (!convite) return;
+  esconderChamadaEntrante();
+  if (state.guild?.id !== convite.channel.guildId) await abrirServidor(convite.channel.guildId);
+  entrarNaVoz(convite.channel.id);
+});
+
+el.callBannerDecline.addEventListener('click', esconderChamadaEntrante);
 
 /* --------------------------- entrar e sair da voz --------------------------- */
 
@@ -888,7 +977,7 @@ function tearDownRoom() {
     p.audioEls.forEach((a) => a.remove());
   });
   state.peers.clear();
-  state.nodes.forEach((n) => { n.mitem.remove(); n.tile.remove(); });
+  state.nodes.forEach((n) => { n.tile.remove(); });
   state.nodes.clear();
   state.members.clear();
   state.meters.clear();
@@ -921,7 +1010,7 @@ function upsertMember(info) {
 
 function dropMember(id) {
   const n = state.nodes.get(id);
-  if (n) { n.mitem.remove(); n.tile.remove(); }
+  if (n) { n.tile.remove(); }
   state.nodes.delete(id);
   state.members.delete(id);
   state.meters.delete(id);
@@ -933,36 +1022,6 @@ function dropMember(id) {
 
 function buildNodes(m) {
   const label = m.mine ? `${m.name} (você)` : m.name;
-
-  /* linha na lista do servidor — nome, status e recado, como no Messenger */
-  const mitem = document.createElement('li');
-  const mbtn = document.createElement('button');
-  mbtn.className = 'member';
-  mbtn.type = 'button';
-  mbtn.dataset.id = m.id;
-  const mavatar = document.createElement('span');
-  mavatar.className = 'avatar';
-  const presence = document.createElement('i');
-  presence.className = 'presence';
-  const mtext = document.createElement('span');
-  mtext.className = 'member-text';
-  const mname = document.createElement('strong');
-  mname.className = 'member-name';
-  mname.textContent = label;
-  const mnote = document.createElement('small');
-  mnote.className = 'member-note';
-  mtext.append(mname, mnote);
-  const mquiet = document.createElement('span');
-  mquiet.className = 'member-quiet';
-  mquiet.title = 'Você silenciou esta pessoa';
-  mquiet.appendChild(icon('i-speaker-off'));
-  mquiet.hidden = true;
-  mbtn.append(mavatar, mtext, mquiet);
-  mitem.appendChild(mbtn);
-  el.memberList.appendChild(mitem);
-
-  if (m.mine) mbtn.addEventListener('click', openStatus);
-  else mbtn.addEventListener('click', () => openVolume(m.id, mbtn));
 
   /* quadro no palco */
   const tile = document.createElement('div');
@@ -1027,13 +1086,10 @@ function buildNodes(m) {
   tile.append(video, face, tlabel, full);
   el.tiles.appendChild(tile);
 
-  [mavatar, tavatar].forEach((node) => paintAvatar(node, m.name));
-  // paintAvatar escreve as iniciais como texto; o pingo de status precisa
-  // voltar para dentro do avatar da lista.
-  mavatar.appendChild(presence);
+  paintAvatar(tavatar, m.name);
 
   updateTiles();
-  return { mitem, mbtn, mavatar, presence, mnote, mquiet, tile, video, tmute, tvolume };
+  return { tile, video, tmute, tvolume };
 }
 
 function paintMember(id) {
@@ -1044,21 +1100,137 @@ function paintMember(id) {
   // Estado de canal de voz: agora só no palco — a lista lateral por canal
   // é o roster (renderRoster), que não depende de sessão rica nenhuma.
   setShown(n.tmute, m.muted === true);
-
-  // Na lista do servidor: status, recado, e se você silenciou a pessoa.
-  n.presence.dataset.status = m.status || 'online';
-  n.mnote.textContent = m.note || '';
-  n.mnote.hidden = !m.note;
-
-  const v = state.volumes.get(id);
-  setShown(n.mquiet, !!v && (v.quietVoice || v.voice === 0));
 }
 
 function refreshCount() {
   const n = state.members.size;
-  $('count').textContent = String(n);
   el.viewSub.textContent = state.view === 'stage' && state.voiceChannel
     ? `${n} ${n === 1 ? 'pessoa' : 'pessoas'} no canal` : '';
+}
+
+/* --------------------------- lista do servidor --------------------------- */
+
+/* A coluna da direita mostra TODO MUNDO do servidor, agrupado por cargo —
+ * não só quem está numa chamada de voz. "Online" aqui é presença de app
+ * aberto (state.presentUserIds), não presença de voz. */
+function renderMemberList() {
+  if (!el.membersPane) return;
+  el.membersPane.textContent = '';
+
+  const membros = [...state.guildMembers.values()];
+  if (!membros.length) return;
+
+  const cargos = [...state.roles].filter((r) => !r.isEveryone).sort((a, b) => b.position - a.position);
+  const porCargo = new Map();
+  const semCargo = [];
+
+  membros.forEach((m) => {
+    const meuCargo = cargos.find((r) => m.roleIds?.includes(r.id));
+    if (meuCargo) {
+      if (!porCargo.has(meuCargo.id)) porCargo.set(meuCargo.id, []);
+      porCargo.get(meuCargo.id).push(m);
+    } else {
+      semCargo.push(m);
+    }
+  });
+
+  const ordenados = (lista) => lista.slice().sort((a, b) => {
+    const onA = state.presentUserIds.has(a.id), onB = state.presentUserIds.has(b.id);
+    if (onA !== onB) return onA ? -1 : 1;
+    return a.name.localeCompare(b.name, 'pt-BR');
+  });
+
+  function grupo(titulo, lista, cor) {
+    if (!lista.length) return;
+    const h = document.createElement('h3');
+    h.className = 'group-title';
+    if (cor) {
+      const dot = document.createElement('span');
+      dot.className = 'role-dot';
+      dot.style.background = cor;
+      h.appendChild(dot);
+    }
+    h.appendChild(document.createTextNode(`${titulo} — ${lista.length}`));
+    el.membersPane.appendChild(h);
+
+    const ul = document.createElement('ul');
+    ul.className = 'member-list';
+    ordenados(lista).forEach((m) => ul.appendChild(itemMembro(m)));
+    el.membersPane.appendChild(ul);
+  }
+
+  cargos.forEach((r) => grupo(r.name, porCargo.get(r.id) || [], r.color));
+  grupo('Membros', semCargo, null);
+}
+
+function itemMembro(m) {
+  const online = state.presentUserIds.has(m.id);
+
+  const li = document.createElement('li');
+  li.className = 'member-row';
+  li.dataset.online = String(online);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'member';
+
+  const av = document.createElement('span');
+  av.className = 'avatar';
+  paintAvatar(av, m.name);
+
+  const nome = document.createElement('span');
+  nome.className = 'member-name';
+  nome.textContent = m.id === state.user?.id ? `${m.name} (você)` : m.name;
+
+  btn.append(av, nome);
+  li.appendChild(btn);
+  btn.addEventListener('click', () => abrirPerfil(m, btn));
+  return li;
+}
+
+/** Verdadeiro se essa pessoa está no MESMO canal de voz em que eu estou. */
+function estaNoMeuCanal(userId) {
+  if (!state.voiceChannel) return false;
+  return [...rosterDoCanal(state.voiceChannel.id).values()].some((p) => p.userId === userId);
+}
+
+function abrirPerfil(m, anchor) {
+  paintAvatar(el.profileAvatar, m.name);
+  el.profileName.textContent = m.id === state.user?.id ? `${m.name} (você)` : m.name;
+
+  const online = state.presentUserIds.has(m.id);
+  el.profileStatus.textContent = online ? 'Online' : 'Offline';
+  el.profileStatus.dataset.online = String(online);
+
+  el.profileRoles.textContent = '';
+  state.roles
+    .filter((r) => !r.isEveryone && m.roleIds?.includes(r.id))
+    .forEach((r) => {
+      const li = document.createElement('li');
+      li.className = 'role-pill';
+      const dot = document.createElement('span');
+      dot.className = 'role-dot';
+      dot.style.background = r.color || 'var(--line)';
+      li.append(dot, document.createTextNode(r.name));
+      el.profileRoles.appendChild(li);
+    });
+
+  const podeChamar = m.id !== state.user?.id && online && Boolean(state.voiceChannel) && !estaNoMeuCanal(m.id);
+  setShown(el.profileCallBtn, podeChamar);
+  el.profileCallBtn.onclick = () => {
+    chamarParaVoz(m.id, state.voiceChannel.id);
+    el.profilePop.hidden = true;
+  };
+
+  el.profilePop.hidden = false;
+  if (isNarrow()) {
+    el.profilePop.style.left = ''; el.profilePop.style.top = '';
+    return;
+  }
+  const r = anchor.getBoundingClientRect();
+  const pop = el.profilePop.getBoundingClientRect();
+  el.profilePop.style.left = `${Math.max(8, Math.min(r.left - pop.width - 8, innerWidth - pop.width - 8))}px`;
+  el.profilePop.style.top = `${Math.max(8, Math.min(r.top, innerHeight - pop.height - 8))}px`;
 }
 
 function updateTiles() {
@@ -1872,6 +2044,12 @@ const SONS = {
   surdo:    (d) => { sino(d, NOTA.E4, 0, .12, .11, 1); sino(d, NOTA.A3, .06, .18, .11, 1); },
   desurdo:  (d) => { sino(d, NOTA.A3, 0, .12, .11, 1); sino(d, NOTA.E4, .06, .2, .12, 1); },
 
+  // chamada entrante: dois toques repetidos, mais insistente que mensagem
+  chamada: (d) => {
+    sino(d, NOTA.A5, 0, .3, .2, 2.5); sino(d, NOTA.E5, .12, .3, .18, 2.5);
+    sino(d, NOTA.A5, .5, .3, .2, 2.5); sino(d, NOTA.E5, .62, .3, .18, 2.5);
+  },
+
   // zumbido: nada de sino — grave, trêmulo e incômodo, como manda o nome
   zumbido: (d) => {
     tom(d, { freq: 120, para: 88, quando: 0, dur: .18, vol: .16, tipo: 'sawtooth' });
@@ -2054,6 +2232,8 @@ function levelOf({ analyser, buf }) {
 }
 
 function tickMeters() {
+  const avataresDoRoster = state.voiceChannel ? state.rosterMemberEls.get(state.voiceChannel.id) : null;
+
   state.meters.forEach((meter, id) => {
     const n = state.nodes.get(id);
     const m = state.members.get(id);
@@ -2062,7 +2242,9 @@ function tickMeters() {
     const talking = !m.muted && levelOf(meter) > 0.14;
     if (talking && m.mine) state.lastActivity = Date.now(); // falar conta como estar aqui
 
-    n.mavatar.classList.toggle('is-speaking', talking);
+    // A borda de "falando" fica só na listagem do canal de voz agora — a
+    // coluna da direita é a lista do servidor inteiro, sem esse indicador.
+    avataresDoRoster?.get(id)?.classList.toggle('is-speaking', talking);
     n.tile.dataset.speaking = String(talking);
   });
 
@@ -2677,6 +2859,7 @@ document.addEventListener('click', (e) => {
   if (!el.volumePop.hidden && !inside(el.volumePop, '.member', '.tile-volume')) el.volumePop.hidden = true;
   if (!el.statusPop.hidden && !inside(el.statusPop, '#meCard')) el.statusPop.hidden = true;
   if (!el.soundPop.hidden && !inside(el.soundPop, '#soundBtn', '#toolSound')) el.soundPop.hidden = true;
+  if (!el.profilePop.hidden && !inside(el.profilePop, '.member', '.vmember')) el.profilePop.hidden = true;
 });
 
 /* --------------------------- áudio gravado --------------------------- */
@@ -2755,6 +2938,7 @@ document.addEventListener('keydown', (e) => {
     if (!el.statusPop.hidden) return (el.statusPop.hidden = true);
     if (!el.soundPop.hidden) return (el.soundPop.hidden = true);
     if (!el.emojiPop.hidden) return (el.emojiPop.hidden = true);
+    if (!el.profilePop.hidden) return (el.profilePop.hidden = true);
     if (state.editing) return cancelEdit();
     if (state.replyTo) return cancelReply();
     if (state.drawer !== 'none') return closeDrawers();

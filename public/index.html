@@ -215,10 +215,7 @@
     </section>
   </main>
 
-  <aside id="membersPane" class="members">
-    <h3 class="group-title">Online — <span id="count" class="mono">0</span></h3>
-    <ul id="memberList" class="member-list"></ul>
-  </aside>
+  <aside id="membersPane" class="members"></aside>
 
   <!-- status e recado, no espírito do Messenger -->
   <div id="statusPop" class="pop status-pop" hidden>
@@ -256,6 +253,22 @@
       <p id="statsLine" class="stats-line mono">medindo…</p>
     </div>
     <p id="liveNone" class="volume-none" hidden>Esta transmissão veio sem som.</p>
+  </div>
+
+  <!-- perfil de uma pessoa: cargos e chamar para a voz -->
+  <div id="profilePop" class="pop profile-pop" hidden>
+    <div class="profile-head">
+      <span class="avatar avatar-lg" id="profileAvatar"></span>
+      <div class="profile-head-text">
+        <strong id="profileName" class="pop-title">—</strong>
+        <small id="profileStatus" class="profile-status"></small>
+      </div>
+    </div>
+    <ul id="profileRoles" class="profile-roles"></ul>
+    <button id="profileCallBtn" class="profile-call" type="button" hidden>
+      <svg class="ico"><use href="#i-mic"/></svg>
+      <span>Chamar para a chamada</span>
+    </button>
   </div>
 
   <!-- sons -->
@@ -395,6 +408,17 @@
   </button>
 
   <div id="dropZone" class="drop-zone" hidden><span>Solte a imagem para enviar</span></div>
+  <div id="callBanner" class="call-banner" hidden>
+    <span class="avatar avatar-lg" id="callBannerAvatar"></span>
+    <div class="call-banner-text">
+      <strong id="callBannerName"></strong>
+      <small id="callBannerChannel"></small>
+    </div>
+    <div class="call-banner-actions">
+      <button id="callBannerAccept" class="call-accept" type="button">Aceitar</button>
+      <button id="callBannerDecline" class="call-decline" type="button">Recusar</button>
+    </div>
+  </div>
   <div id="scrim" class="scrim"></div>
   <div id="toast" class="toast" hidden></div>
   <div id="floats" class="floats" aria-hidden="true"></div>

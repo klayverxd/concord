@@ -850,6 +850,42 @@ html, body {
 .member-quiet { display: flex; color: var(--busy); }
 .member-quiet .ico { width: 15px; height: 15px; }
 
+/* Offline: com o app fechado, a pessoa continua listada (ainda é membro do
+ * servidor) mas some visualmente pra segundo plano. */
+.member-row[data-online='false'] .member { opacity: .45; }
+
+.role-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  display: inline-block; margin-right: 6px;
+  background: var(--line);
+}
+.group-title .role-dot { margin-right: 5px; }
+
+.profile-pop { width: 220px; }
+.profile-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.profile-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.profile-status { font-size: 12px; color: var(--txt-dim); }
+.profile-status[data-online='true'] { color: var(--online); }
+.profile-roles {
+  list-style: none; margin: 0 0 10px; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.role-pill {
+  display: flex; align-items: center;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--hover); border: 1px solid var(--line);
+  font-size: 12px;
+}
+.role-pill .role-dot { margin-right: 5px; }
+.profile-call {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; padding: 9px; border: 0; border-radius: 12px;
+  background: var(--grad); color: #080b18; font-weight: 600; font-size: 13px;
+  cursor: pointer;
+}
+.profile-call .ico { width: 15px; height: 15px; }
+.profile-call:hover { filter: brightness(1.05); }
+
 /* Cabeçalho de grupo colapsável, como "Disponível (3)" */
 .group-title {
   display: flex; align-items: center; gap: 6px;
@@ -1116,6 +1152,31 @@ kbd {
   box-shadow: 0 6px 18px var(--sombra);
 }
 .toast[data-kind='ok'] { background: var(--grad); color: #080b18; }
+
+@keyframes call-pulse {
+  0%, 100% { box-shadow: 0 6px 24px var(--sombra), 0 0 0 0 rgba(52, 224, 122, .5); }
+  50%      { box-shadow: 0 6px 24px var(--sombra), 0 0 0 8px rgba(52, 224, 122, 0); }
+}
+.call-banner {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 65;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: 18px;
+  background: var(--panel); border: 1px solid var(--line);
+  animation: call-pulse 1.3s ease-in-out infinite;
+}
+.call-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.call-banner-text strong { font-size: 13px; }
+.call-banner-text small { color: var(--txt-dim); font-size: 12px; }
+.call-banner-actions { display: flex; gap: 8px; }
+.call-accept, .call-decline {
+  border: 0; border-radius: 14px; padding: 8px 14px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.call-accept { background: var(--online); color: #06210f; }
+.call-decline { background: var(--hover); color: var(--txt); }
+.call-accept:hover { filter: brightness(1.08); }
+.call-decline:hover { background: var(--busy); color: #fff; }
 
 .scrim { display: none; position: fixed; inset: 0; z-index: 20; background: var(--inset); }
 
