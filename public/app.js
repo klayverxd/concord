@@ -62,8 +62,14 @@ const el = {
   settings: $('settings'), settingsClose: $('settingsClose'),
   micSelect: $('micSelect'), outputRow: $('outputRow'), outSelect: $('outSelect'),
   qualitySelect: $('qualitySelect'), pttCheck: $('pttCheck'), testBar: $('testBar'),
+  testVoiceBtn: $('testVoiceBtn'),
   soundsCheck: $('soundsCheck'), notifyCheck: $('notifyCheck'), awayCheck: $('awayCheck'),
   themeCheck: $('themeCheck'), toolNudge: $('toolNudge'), toolSound: $('toolSound'),
+  noiseCheck: $('noiseCheck'),
+  noiseSensitivityRow: $('noiseSensitivityRow'),
+  noiseThresholdRange: $('noiseThresholdRange'),
+  noiseThresholdVal: $('noiseThresholdVal'),
+  thresholdMarker: $('thresholdMarker'),
 
   audioUnlock: $('audioUnlock'), floats: $('floats'), audios: $('audios')
 };
@@ -87,11 +93,11 @@ const state = {
   status: 'online', note: '', statusBeforeAway: null,
   view: 'stage', focused: null,
   quality: '1080', micId: '', sinkId: '',
-  sounds: true, notify: false, autoAway: true,
+  sounds: true, notify: false, autoAway: true, noiseSuppression: true, noiseThreshold: 20,
   ice: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
   members: new Map(), nodes: new Map(), peers: new Map(),
   meters: new Map(), volumes: new Map(),
-  audioCtx: null, micSource: null, mixDest: null,
+  audioCtx: null, micSource: null, mixDest: null, noiseNode: null, noiseWorkletLoaded: false,
   messages: new Map(),  // id -> { msg, node }
   lastMsg: null, typers: new Map(), typingSentAt: 0,
   replyTo: null, editing: null,
@@ -1483,7 +1489,19 @@ function startAudioContext() {
   // Tudo que sai daqui passa por este ponto: microfone e sons da soundboard.
   state.mixDest = state.audioCtx.createMediaStreamDestination();
   state.outStream = state.mixDest.stream;
-  connectMicToMix();
+  
+  // Carrega o Noise Gate (Supressão de Ruído Avançada)
+  if (state.audioCtx.audioWorklet) {
+    state.audioCtx.audioWorklet.addModule('/lib/noise-processor.js').then(() => {
+      state.noiseWorkletLoaded = true;
+      connectMicToMix();
+    }).catch(e => {
+      console.error('Erro ao carregar supressão de ruído:', e);
+      connectMicToMix();
+    });
+  } else {
+    connectMicToMix();
+  }
 
   requestAnimationFrame(tickMeters);
 }
@@ -1491,8 +1509,122 @@ function startAudioContext() {
 function connectMicToMix() {
   if (!state.audioCtx || !state.mic) return;
   try { state.micSource?.disconnect(); } catch (_) {}
+  try { state.noiseNode?.disconnect(); } catch (_) {}
+  
   state.micSource = state.audioCtx.createMediaStreamSource(state.mic);
-  state.micSource.connect(state.mixDest);
+  
+  if (state.noiseSuppression && state.noiseWorkletLoaded) {
+    if (!state.noiseNode) {
+      state.noiseNode = new AudioWorkletNode(state.audioCtx, 'noise-gate-processor');
+    }
+    try { state.noiseNode.port.postMessage({ threshold: getNoiseThreshold() }); } catch (_) {}
+    state.micSource.connect(state.noiseNode);
+    state.noiseNode.connect(state.mixDest);
+  } else {
+    state.micSource.connect(state.mixDest);
+  }
+
+  if (testVoiceActive) {
+    updateTestVoiceRoute();
+  }
+}
+
+function getNoiseThreshold() {
+  const val = Number(state.noiseThreshold) || 20;
+  return Number((val / 1000).toFixed(4));
+}
+
+function setNoiseThreshold(val) {
+  state.noiseThreshold = Math.max(1, Math.min(100, Number(val) || 20));
+  store.set('noise_threshold', String(state.noiseThreshold));
+
+  if (el.noiseThresholdRange) el.noiseThresholdRange.value = state.noiseThreshold;
+  if (el.noiseThresholdVal) el.noiseThresholdVal.textContent = `${state.noiseThreshold}%`;
+  if (el.thresholdMarker) el.thresholdMarker.style.left = `${state.noiseThreshold}%`;
+
+  const thresh = getNoiseThreshold();
+  if (state.noiseNode) {
+    try { state.noiseNode.port.postMessage({ threshold: thresh }); } catch (_) {}
+  }
+  if (testMeter?.testNoiseNode) {
+    try { testMeter.testNoiseNode.port.postMessage({ threshold: thresh }); } catch (_) {}
+  }
+}
+
+function updateNoiseSensitivityUI() {
+  if (!el.noiseSensitivityRow) return;
+  el.noiseSensitivityRow.classList.toggle('is-disabled', !state.noiseSuppression);
+  if (el.thresholdMarker) {
+    el.thresholdMarker.style.display = state.noiseSuppression ? 'block' : 'none';
+  }
+}
+
+/* ----------------------- teste de retorno de voz ----------------------- */
+
+let testVoiceActive = false;
+let testVoiceGain = null;
+
+function toggleTestVoice() {
+  if (testVoiceActive) {
+    stopTestVoice();
+  } else {
+    startTestVoice();
+  }
+}
+
+function startTestVoice() {
+  if (!state.audioCtx || !state.mic) {
+    return toast('Microfone não disponível para teste.');
+  }
+  if (state.audioCtx.state === 'suspended') {
+    state.audioCtx.resume();
+  }
+
+  testVoiceActive = true;
+  if (el.testVoiceBtn) {
+    el.testVoiceBtn.classList.add('is-active');
+    el.testVoiceBtn.querySelector('span').textContent = 'Parar de ouvir';
+  }
+
+  if (!testVoiceGain) {
+    testVoiceGain = state.audioCtx.createGain();
+    testVoiceGain.gain.value = 1.0;
+  }
+
+  updateTestVoiceRoute();
+  toast('Você está ouvindo sua voz. Use fones para evitar microfonia!', 'ok');
+}
+
+function stopTestVoice() {
+  if (!testVoiceActive) return;
+  testVoiceActive = false;
+
+  if (el.testVoiceBtn) {
+    el.testVoiceBtn.classList.remove('is-active');
+    el.testVoiceBtn.querySelector('span').textContent = 'Testar minha voz';
+  }
+
+  if (testVoiceGain) {
+    try { testVoiceGain.disconnect(); } catch (_) {}
+  }
+  try { state.noiseNode?.disconnect(testVoiceGain); } catch (_) {}
+  try { state.micSource?.disconnect(testVoiceGain); } catch (_) {}
+}
+
+function updateTestVoiceRoute() {
+  if (!testVoiceActive || !state.audioCtx || !testVoiceGain) return;
+
+  try { state.noiseNode?.disconnect(testVoiceGain); } catch (_) {}
+  try { state.micSource?.disconnect(testVoiceGain); } catch (_) {}
+  try { testVoiceGain.disconnect(); } catch (_) {}
+
+  testVoiceGain.connect(state.audioCtx.destination);
+
+  if (state.noiseSuppression && state.noiseWorkletLoaded && state.noiseNode) {
+    state.noiseNode.connect(testVoiceGain);
+  } else if (state.micSource) {
+    state.micSource.connect(testVoiceGain);
+  }
 }
 
 /* ------------------------------ sons ------------------------------ *
@@ -1823,6 +1955,18 @@ function buildTestMeter() {
   const analyser = state.audioCtx.createAnalyser();
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.6;
+
+  if (state.noiseSuppression && state.noiseWorkletLoaded) {
+    try {
+      const testNoiseNode = new AudioWorkletNode(state.audioCtx, 'noise-gate-processor');
+      try { testNoiseNode.port.postMessage({ threshold: getNoiseThreshold() }); } catch (_) {}
+      source.connect(testNoiseNode);
+      testNoiseNode.connect(analyser);
+      testMeter = { clone, analyser, testNoiseNode, buf: new Uint8Array(analyser.frequencyBinCount) };
+      return;
+    } catch (_) {}
+  }
+
   source.connect(analyser);
   testMeter = { clone, analyser, buf: new Uint8Array(analyser.frequencyBinCount) };
 }
@@ -2511,11 +2655,16 @@ function loadPrefs() {
   state.sounds = store.get('sons', '1') === '1';
   state.notify = store.get('avisos') === '1';
   state.autoAway = store.get('ausente', '1') === '1';
+  state.noiseSuppression = store.get('noise', '1') === '1';
+  state.noiseThreshold = Number(store.get('noise_threshold', '20')) || 20;
   state.quality = store.get('qualidade', '1080');
   state.note = store.get('recado', '');
   state.status = store.get('status', 'online');
 
   el.pttCheck.checked = state.ptt;
+  el.noiseCheck.checked = state.noiseSuppression;
+  setNoiseThreshold(state.noiseThreshold);
+  updateNoiseSensitivityUI();
   el.soundsCheck.checked = state.sounds;
   el.notifyCheck.checked = state.notify;
   el.awayCheck.checked = state.autoAway;
@@ -2533,6 +2682,20 @@ el.pttCheck.addEventListener('change', () => {
   store.set('ptt', state.ptt ? '1' : '0');
   setMic(!state.ptt);   // ligou: entra mudo, só abre com a tecla
 });
+
+el.noiseCheck.addEventListener('change', () => {
+  state.noiseSuppression = el.noiseCheck.checked;
+  store.set('noise', state.noiseSuppression ? '1' : '0');
+  updateNoiseSensitivityUI();
+  connectMicToMix();
+  if (!el.settings.hidden) buildTestMeter();
+});
+
+el.noiseThresholdRange?.addEventListener('input', (e) => {
+  setNoiseThreshold(e.target.value);
+});
+
+el.testVoiceBtn?.addEventListener('click', toggleTestVoice);
 
 el.soundsCheck.addEventListener('change', () => {
   state.sounds = el.soundsCheck.checked;
@@ -2571,6 +2734,7 @@ el.settings.addEventListener('click', (e) => { if (e.target === el.settings) clo
 
 function closeSettings() {
   el.settings.hidden = true;
+  stopTestVoice();
   releaseTestMeter();   // o clone da faixa não fica ligado à toa
   el.testBar.style.width = '0%';
 }
@@ -2637,7 +2801,10 @@ async function switchMic(deviceId) {
 
   state.meters.delete(state.me.id);
   attachMeter(state.me.id, stream);
-  if (!el.settings.hidden) buildTestMeter();
+  if (!el.settings.hidden) {
+    buildTestMeter();
+    if (testVoiceActive) updateTestVoiceRoute();
+  }
 
   toast('Microfone trocado.', 'ok');
 }
