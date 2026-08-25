@@ -86,6 +86,7 @@ app.get('/health', async (_req, res) => {
 const voz = new Map();
 
 const salaDoCanal = (channelId) => `voz:${channelId}`;
+const salaDoGuild = (guildId) => `guild:${guildId}`;
 
 function pessoasNoCanal(channelId) {
   const fora = [];
@@ -206,7 +207,10 @@ io.on('connection', (socket) => {
         peers: outros
       });
 
-      socket.to(salaDoCanal(channelId)).emit('peer-joined', { id: socket.id, ...estado });
+      // Alcança quem já está no canal (sinalização WebRTC) E o servidor
+      // inteiro (para a lista de "quem está em cada canal" na barra
+      // lateral, visível mesmo para quem não entrou).
+      socket.to([salaDoCanal(channelId), salaDoGuild(canal.guildId)]).emit('peer-joined', { id: socket.id, ...estado });
     } catch (err) {
       console.error('join-voice:', err);
       responde({ error: 'Não deu para entrar no canal.' });
@@ -220,7 +224,7 @@ io.on('connection', (socket) => {
     if (!v) return;
     voz.delete(s.id);
     s.leave(salaDoCanal(v.channelId));
-    io.to(salaDoCanal(v.channelId)).emit('peer-left', { id: s.id });
+    io.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('peer-left', { id: s.id, channelId: v.channelId });
   }
 
   /* --------------------------- sinalização WebRTC --------------------------- */
@@ -259,8 +263,9 @@ io.on('connection', (socket) => {
     }
     if (screenId !== undefined) v.screenId = typeof screenId === 'string' ? screenId.slice(0, 80) : null;
 
-    socket.to(salaDoCanal(v.channelId)).emit('peer-state', {
-      id: socket.id, muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId
+    socket.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('peer-state', {
+      id: socket.id, channelId: v.channelId,
+      muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId
     });
   });
 
@@ -270,9 +275,33 @@ io.on('connection', (socket) => {
     const validos = new Set(['online', 'ocupado', 'volto', 'ausente', 'invisivel']);
     if (typeof status === 'string' && validos.has(status)) v.status = status;
     if (typeof note === 'string') v.note = note.slice(0, 80);
-    socket.to(salaDoCanal(v.channelId)).emit('peer-presence', {
-      id: socket.id, status: v.status, note: v.note
+    socket.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('peer-presence', {
+      id: socket.id, channelId: v.channelId, status: v.status, note: v.note
     });
+  });
+
+  /* Presença de voz de TODO o servidor: quem entra nesta sala descobre quem
+   * está em cada canal sem precisar entrar em nenhum. É o que faltava para
+   * a barra lateral mostrar ocupantes de qualquer canal, sempre. */
+  socket.on('watch-guild', async ({ guildId } = {}, ack) => {
+    const responde = (r) => typeof ack === 'function' && ack(r);
+    if (!guildId || typeof guildId !== 'string') return responde({ error: 'Servidor inválido.' });
+    if (!(await store.isMember(guildId, eu.id))) return responde({ error: 'Servidor não encontrado.' });
+
+    for (const sala of socket.rooms) {
+      if (sala.startsWith('guild:')) socket.leave(sala);
+    }
+    socket.join(salaDoGuild(guildId));
+
+    const porCanal = {};
+    for (const [socketId, v] of voz) {
+      if (v.guildId !== guildId) continue;
+      (porCanal[v.channelId] ||= []).push({
+        id: socketId, userId: v.userId, name: v.name, avatar: v.avatar,
+        muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId
+      });
+    }
+    responde({ channels: porCanal });
   });
 
   /* --------------------------- conversa --------------------------- */
@@ -456,8 +485,9 @@ io.on('connection', (socket) => {
       reason: r.alvo.serverMuted ? 'Você foi mutado por um moderador.' : 'Você já pode falar.',
       muted: r.alvo.muted
     });
-    io.to(salaDoCanal(r.v.channelId)).emit('peer-state', {
-      id: alvoId, muted: r.alvo.muted, sharing: r.alvo.sharing, deaf: r.alvo.deaf, screenId: r.alvo.screenId
+    io.to([salaDoCanal(r.v.channelId), salaDoGuild(r.v.guildId)]).emit('peer-state', {
+      id: alvoId, channelId: r.v.channelId,
+      muted: r.alvo.muted, sharing: r.alvo.sharing, deaf: r.alvo.deaf, screenId: r.alvo.screenId
     });
     await store.audit(r.v.guildId, eu.id, muted ? 'mutou' : 'desmutou', r.alvo.userId);
   });

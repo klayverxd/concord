@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js",
+    "tauri": "tauri"
   },
   "engines": {
     "node": ">=18"

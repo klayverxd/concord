@@ -91,6 +91,12 @@ const state = {
   ice: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
   members: new Map(), nodes: new Map(), peers: new Map(),
   meters: new Map(), volumes: new Map(),
+  // Quem está em cada canal de voz do servidor — de todo mundo, não só de
+  // quem entrou. channelId -> Map(socketId -> {id, userId, name, avatar,
+  // muted, sharing, deaf}). Persiste através de qualquer redesenho da
+  // barra lateral, o que é o que faltava para a lista não desaparecer.
+  channelVoice: new Map(), rosterEls: new Map(),
+  noise: true,
   audioCtx: null, micSource: null, mixDest: null,
   messages: new Map(),  // id -> { msg, node }
   lastMsg: null, typers: new Map(), typingSentAt: 0,
@@ -465,6 +471,7 @@ function montarTela() {
  * não chega nem na lista, então não tem o que esconder aqui. */
 function desenharCanais() {
   el.channels.textContent = '';
+  state.rosterEls.clear();
 
   const grupo = (titulo) => {
     const h = document.createElement('h3');
@@ -476,16 +483,23 @@ function desenharCanais() {
   const voz = state.channels.filter((c) => c.type === 'voice');
   const texto = state.channels.filter((c) => c.type === 'text');
 
-  grupo('Canais de voz');
-  voz.forEach((c) => el.channels.appendChild(itemCanal(c)));
-  const lista = document.createElement('ul');
-  lista.className = 'voice-members';
-  lista.id = 'voiceMembers';
-  el.channels.appendChild(lista);
-  el.voiceMembers = lista;
-
+  // Texto em cima, voz embaixo — pedido explicitamente.
   grupo('Canais de texto');
   texto.forEach((c) => el.channels.appendChild(itemCanal(c)));
+
+  grupo('Canais de voz');
+  voz.forEach((c) => {
+    el.channels.appendChild(itemCanal(c));
+
+    // Lista de quem está NESTE canal, presa embaixo do próprio botão —
+    // não mais um único bloco compartilhado no fim de todos os canais.
+    const roster = document.createElement('ul');
+    roster.className = 'voice-members';
+    roster.dataset.channelId = c.id;
+    el.channels.appendChild(roster);
+    state.rosterEls.set(c.id, roster);
+    renderRoster(c.id); // repovoa de dados que já existiam antes deste redesenho
+  });
 
   /* Só escolhe o canal; abrir de fato é o handler de `connect` que faz.
    * Buscar histórico aqui não funcionava: montarTela() roda antes de
@@ -527,6 +541,71 @@ function itemCanal(canal) {
 }
 
 const itemDoCanal = (id) => el.channels.querySelector(`[data-channel-id="${CSS.escape(id)}"]`);
+
+/* --------------------------- roster de voz por canal --------------------------- *
+ * Fonte única de verdade para "quem está em cada canal de voz". Vive em
+ * state.channelVoice, sobrevive a qualquer redesenho da lista de canais —
+ * era isso que faltava: antes a lista de gente ficava presa a nós de DOM
+ * que um redesenho destruía, e a pessoa "desaparecia" mesmo continuando
+ * conectada. */
+
+function rosterDoCanal(channelId) {
+  if (!state.channelVoice.has(channelId)) state.channelVoice.set(channelId, new Map());
+  return state.channelVoice.get(channelId);
+}
+
+function rosterUpsert(channelId, info) {
+  if (!channelId) return;
+  const mapa = rosterDoCanal(channelId);
+  mapa.set(info.id, { ...mapa.get(info.id), ...info });
+  renderRoster(channelId);
+}
+
+function rosterRemove(channelId, socketId) {
+  if (!channelId) return;
+  state.channelVoice.get(channelId)?.delete(socketId);
+  renderRoster(channelId);
+}
+
+/* Atualiza meu próprio item no canal em que estou — coisas como mutar não
+ * fazem ida e volta pelo servidor para o próprio autor. */
+function meuRosterPatch(patch) {
+  if (!state.voiceChannel) return;
+  rosterUpsert(state.voiceChannel.id, {
+    id: state.me.id, userId: state.user.id, name: state.me.name, avatar: state.user.avatar,
+    ...rosterDoCanal(state.voiceChannel.id).get(state.me.id), ...patch
+  });
+}
+
+function renderRoster(channelId) {
+  const ul = state.rosterEls.get(channelId);
+  if (!ul) return; // canal ainda não desenhado (ex.: chegou antes de montarTela)
+
+  const pessoas = [...rosterDoCanal(channelId).values()];
+  ul.textContent = '';
+  pessoas.forEach((p) => {
+    const li = document.createElement('li');
+    li.className = 'vmember';
+    li.dataset.id = p.id;
+
+    const av = document.createElement('span');
+    av.className = 'avatar avatar-sm';
+    paintAvatar(av, p.name);
+
+    const nome = document.createElement('span');
+    nome.className = 'vmember-name';
+    nome.textContent = p.userId === state.user?.id ? `${p.name} (você)` : p.name;
+
+    const icons = document.createElement('span');
+    icons.className = 'vmember-icons';
+    if (p.sharing) icons.appendChild(icon('i-screen', 'vicon-share'));
+    if (p.muted) icons.appendChild(icon('i-mic-off', 'vicon-mute'));
+    if (p.deaf) icons.appendChild(icon('i-headset-off', 'vicon-mute'));
+
+    li.append(av, nome, icons);
+    ul.appendChild(li);
+  });
+}
 
 function marcarAtivos() {
   el.channels.querySelectorAll('.channel').forEach((b) => {
@@ -760,7 +839,7 @@ function tearDownRoom() {
     p.audioEls.forEach((a) => a.remove());
   });
   state.peers.clear();
-  state.nodes.forEach((n) => { n.vitem.remove(); n.mitem.remove(); n.tile.remove(); });
+  state.nodes.forEach((n) => { n.mitem.remove(); n.tile.remove(); });
   state.nodes.clear();
   state.members.clear();
   state.meters.clear();
@@ -793,7 +872,7 @@ function upsertMember(info) {
 
 function dropMember(id) {
   const n = state.nodes.get(id);
-  if (n) { n.vitem.remove(); n.mitem.remove(); n.tile.remove(); }
+  if (n) { n.mitem.remove(); n.tile.remove(); }
   state.nodes.delete(id);
   state.members.delete(id);
   state.meters.delete(id);
@@ -805,25 +884,6 @@ function dropMember(id) {
 
 function buildNodes(m) {
   const label = m.mine ? `${m.name} (você)` : m.name;
-
-  /* faixa dentro do canal de voz — aqui vive o estado de voz */
-  const vitem = document.createElement('li');
-  vitem.className = 'vmember';
-  vitem.dataset.id = m.id;
-  const vavatar = document.createElement('span');
-  vavatar.className = 'avatar avatar-sm';
-  const vname = document.createElement('span');
-  vname.className = 'vmember-name';
-  vname.textContent = label;
-  const vicons = document.createElement('span');
-  vicons.className = 'vmember-icons';
-  const vdeaf = icon('i-headset-off', 'vicon-mute');
-  const vmute = icon('i-mic-off', 'vicon-mute');
-  const vshare = icon('i-screen', 'vicon-share');
-  [vdeaf, vmute, vshare].forEach((i) => setShown(i, false));
-  vicons.append(vshare, vmute, vdeaf);
-  vitem.append(vavatar, vname, vicons);
-  el.voiceMembers.appendChild(vitem);
 
   /* linha na lista do servidor — nome, status e recado, como no Messenger */
   const mitem = document.createElement('li');
@@ -918,13 +978,13 @@ function buildNodes(m) {
   tile.append(video, face, tlabel, full);
   el.tiles.appendChild(tile);
 
-  [vavatar, mavatar, tavatar].forEach((node) => paintAvatar(node, m.name));
+  [mavatar, tavatar].forEach((node) => paintAvatar(node, m.name));
   // paintAvatar escreve as iniciais como texto; o pingo de status precisa
   // voltar para dentro do avatar da lista.
   mavatar.appendChild(presence);
 
   updateTiles();
-  return { vitem, vavatar, vdeaf, vmute, vshare, mitem, mbtn, mavatar, presence, mnote, mquiet, tile, video, tmute, tvolume };
+  return { mitem, mbtn, mavatar, presence, mnote, mquiet, tile, video, tmute, tvolume };
 }
 
 function paintMember(id) {
@@ -932,10 +992,8 @@ function paintMember(id) {
   const n = state.nodes.get(id);
   if (!m || !n) return;
 
-  // Estado de canal de voz: só na lista do canal e no palco.
-  setShown(n.vdeaf, m.deaf === true);
-  setShown(n.vmute, m.muted === true);
-  setShown(n.vshare, m.sharing === true);
+  // Estado de canal de voz: agora só no palco — a lista lateral por canal
+  // é o roster (renderRoster), que não depende de sessão rica nenhuma.
   setShown(n.tmute, m.muted === true);
 
   // Na lista do servidor: status, recado, e se você silenciou a pessoa.
@@ -1798,8 +1856,7 @@ function tickMeters() {
     const talking = !m.muted && levelOf(meter) > 0.14;
     if (talking && m.mine) state.lastActivity = Date.now(); // falar conta como estar aqui
 
-    n.vavatar.classList.toggle('is-speaking', talking);
-    n.vitem.dataset.speaking = String(talking);
+    n.mavatar.classList.toggle('is-speaking', talking);
     n.tile.dataset.speaking = String(talking);
   });
 
