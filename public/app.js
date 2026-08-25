@@ -51,6 +51,7 @@ const el = {
 
   chatView: $('chatView'), log: $('log'), typing: $('typing'),
   msgInput: $('msgInput'), sendBtn: $('sendBtn'), imageBtn: $('imageBtn'), fileInput: $('fileInput'),
+  mentionPop: $('mentionPop'),
   emojiBtn: $('emojiBtn'), emojiPop: $('emojiPop'),
   recBtn: $('recBtn'), recHint: $('recHint'), recTime: $('recTime'),
   replyBar: $('replyBar'), replyText: $('replyText'), replyCancel: $('replyCancel'),
@@ -1712,8 +1713,10 @@ function receiveScreen(peer, track) {
   showVideo(peer.id, new MediaStream([track]));
   const m = state.members.get(peer.id);
   if (m) { m.sharing = true; paintMember(peer.id); }
+  // Não força mais a ida pro palco — só acende o selo "ao vivo" no canal;
+  // quem quiser assistir clica. Isso evita puxar quem está lendo o chat
+  // de texto pra tela de voz sem pedir.
   updateLive();
-  setView('stage');
 
   track.addEventListener('ended', () => {
     clearVideo(peer.id);
@@ -2309,16 +2312,107 @@ function rawLevel() { return testMeter ? levelOf(testMeter) : 0; }
 
 el.sendBtn.addEventListener('click', sendText);
 el.msgInput.addEventListener('keydown', (e) => {
+  if (mencaoAtiva) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mencaoAtiva.indice = (mencaoAtiva.indice + 1) % mencaoAtiva.opcoes.length;
+      renderMencaoPop();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mencaoAtiva.indice = (mencaoAtiva.indice - 1 + mencaoAtiva.opcoes.length) % mencaoAtiva.opcoes.length;
+      renderMencaoPop();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      return selecionarMencao(mencaoAtiva.opcoes[mencaoAtiva.indice]);
+    }
+    if (e.key === 'Escape') { e.preventDefault(); fecharMencaoPop(); return; }
+  }
+
   if (e.key === 'Enter') sendText();
   if (e.key === 'Escape') { cancelEdit(); cancelReply(); }
 });
 
 el.msgInput.addEventListener('input', () => {
   const now = Date.now();
-  if (!el.msgInput.value || now - state.typingSentAt < 1800) return;
-  state.typingSentAt = now;
-  state.socket.emit('typing', { channelId: state.textChannel });
+  if (el.msgInput.value && now - state.typingSentAt >= 1800) {
+    state.typingSentAt = now;
+    state.socket.emit('typing', { channelId: state.textChannel });
+  }
+  detectarMencao();
 });
+
+el.msgInput.addEventListener('blur', () => setTimeout(fecharMencaoPop, 120));
+
+/* --------------------------- autocomplete de @menção --------------------------- */
+
+let mencaoAtiva = null; // { inicio, fim, opcoes: [{id,nome}], indice }
+
+function candidatosMencao() {
+  const vistos = new Set();
+  const lista = [{ id: 'todos', nome: 'todos' }];
+  state.guildMembers.forEach((m) => {
+    const chave = m.name.toLowerCase();
+    if (vistos.has(chave)) return;
+    vistos.add(chave);
+    lista.push({ id: m.id, nome: m.name });
+  });
+  return lista;
+}
+
+function detectarMencao() {
+  const val = el.msgInput.value;
+  const pos = el.msgInput.selectionStart;
+  const antes = val.slice(0, pos);
+  const m = antes.match(/@([^\s@]{0,24})$/);
+  if (!m) return fecharMencaoPop();
+
+  const termo = m[1].toLowerCase();
+  const opcoes = candidatosMencao().filter((c) => c.nome.toLowerCase().startsWith(termo)).slice(0, 8);
+  if (!opcoes.length) return fecharMencaoPop();
+
+  mencaoAtiva = { inicio: pos - m[0].length, fim: pos, opcoes, indice: 0 };
+  renderMencaoPop();
+}
+
+function renderMencaoPop() {
+  if (!mencaoAtiva) return;
+  el.mentionPop.textContent = '';
+  mencaoAtiva.opcoes.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.className = 'mention-opt';
+    li.classList.toggle('is-active', i === mencaoAtiva.indice);
+    if (c.id !== 'todos') {
+      const av = document.createElement('span');
+      av.className = 'avatar';
+      paintAvatar(av, c.nome);
+      li.appendChild(av);
+    }
+    li.appendChild(document.createTextNode(c.nome));
+    li.addEventListener('mousedown', (e) => { e.preventDefault(); selecionarMencao(c); });
+    el.mentionPop.appendChild(li);
+  });
+  el.mentionPop.hidden = false;
+}
+
+function selecionarMencao(candidato) {
+  if (!mencaoAtiva) return;
+  const val = el.msgInput.value;
+  const novoVal = `${val.slice(0, mencaoAtiva.inicio)}@${candidato.nome} ${val.slice(mencaoAtiva.fim)}`;
+  el.msgInput.value = novoVal;
+  const novaPos = mencaoAtiva.inicio + candidato.nome.length + 2;
+  fecharMencaoPop();
+  el.msgInput.focus();
+  el.msgInput.setSelectionRange(novaPos, novaPos);
+}
+
+function fecharMencaoPop() {
+  mencaoAtiva = null;
+  el.mentionPop.hidden = true;
+}
 
 function sendText() {
   const text = el.msgInput.value.trim();
@@ -2391,17 +2485,30 @@ function renderInline(text, into) {
 }
 
 function mentionNode(tok) {
-  const who = tok.slice(1).toLowerCase();
-  const everyone = who === 'todos' || who === 'everyone' || who === 'geral';
-  const hit = everyone || [...state.members.values()].some((m) => m.name.toLowerCase() === who);
-  if (!hit) return document.createTextNode(tok);
+  // Pontuação colada no final ("@Bruno,", "@todos!") não pode fazer parte
+  // do nome — sem separar isso, a vírgula quebrava a comparação inteira e
+  // a menção nunca destacava.
+  const partido = tok.match(/^(@[^\s@]*?)([,.!?;:)"'\]]*)$/);
+  const nucleo = partido ? partido[1] : tok;
+  const sobra = partido ? partido[2] : '';
 
-  const mine = everyone
-    || state.user?.name?.toLowerCase() === who;
+  const who = nucleo.slice(1).toLowerCase();
+  const everyone = who === 'todos' || who === 'everyone' || who === 'geral';
+  const hit = everyone || [...state.guildMembers.values()].some((m) => m.name.toLowerCase() === who);
+
+  const frag = document.createDocumentFragment();
+  if (!hit) {
+    frag.appendChild(document.createTextNode(tok));
+    return frag;
+  }
+
+  const mine = everyone || state.user?.name?.toLowerCase() === who;
   const span = document.createElement('span');
   span.className = mine ? 'mention is-me' : 'mention';
-  span.textContent = tok;
-  return span;
+  span.textContent = nucleo;
+  frag.appendChild(span);
+  if (sobra) frag.appendChild(document.createTextNode(sobra));
+  return frag;
 }
 
 function mentionsMe(text) {
@@ -2410,7 +2517,7 @@ function mentionsMe(text) {
   const re = /@([^\s@]{1,24})/g;
   let m;
   while ((m = re.exec(text)) !== null) {
-    const who = m[1].toLowerCase();
+    const who = m[1].replace(/[,.!?;:)"'\]]+$/, '').toLowerCase();
     if (who === mine || who === 'todos' || who === 'everyone' || who === 'geral') return true;
   }
   return false;
