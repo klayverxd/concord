@@ -667,7 +667,6 @@ function conectar() {
 
     upsertMember({ ...p, mine: false });
     ensurePeer(p.id, p.name);
-    system(`${p.name} entrou no canal`, 'in');
     playSound('entrar');
     refreshCount();
   });
@@ -682,9 +681,7 @@ function conectar() {
       peer.audioEls.forEach((a) => a.remove());
       state.peers.delete(id);
     }
-    const who = state.members.get(id)?.name || peer?.name || 'alguém';
     dropMember(id);
-    system(`${who} saiu do canal`, 'out');
     playSound('sair');
     refreshCount();
   });
@@ -803,8 +800,13 @@ async function entrarNaVoz(channelId, religando) {
   el.vsRoom.textContent = `${reply.channel.name} · ${state.guild.name}`;
   setVoiceState('Voz conectada', true);
 
+  // Se o mic já entra mudo (push-to-talk, ou mudou antes de entrar), o
+  // ícone de mudo precisa refletir isso desde o primeiro desenho — não só
+  // depois que a pessoa clicar em mutar/desmutar uma vez.
+  const micOn = state.mic?.getAudioTracks()[0]?.enabled !== false;
+
   upsertMember({
-    id: state.me.id, name: state.me.name, muted: false, sharing: false,
+    id: state.me.id, name: state.me.name, muted: !micOn, sharing: false,
     deaf: false, status: state.status, note: state.note, mine: true
   });
   attachMeter(state.me.id, state.mic);
@@ -815,7 +817,7 @@ async function entrarNaVoz(channelId, religando) {
    * `watch-guild` tenha chegado antes desta entrada existir. */
   rosterUpsert(channelId, {
     id: state.me.id, userId: state.user.id, name: state.me.name, avatar: state.user.avatar,
-    muted: false, sharing: false, deaf: state.deaf
+    muted: !micOn, sharing: false, deaf: state.deaf
   });
 
   reply.peers.forEach((p) => {
@@ -824,7 +826,6 @@ async function entrarNaVoz(channelId, religando) {
     rosterUpsert(channelId, p);
   });
 
-  const micOn = state.mic?.getAudioTracks()[0]?.enabled !== false;
   state.socket.emit('state', { muted: !micOn, sharing: false, deaf: state.deaf, screenId: null });
   state.socket.emit('presence', { status: state.status, note: state.note });
 

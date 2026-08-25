@@ -85,6 +85,19 @@ app.get('/health', async (_req, res) => {
  *                      muted, sharing, deaf, screenId, serverMuted, status, note}>} */
 const voz = new Map();
 
+/* Imagem e áudio do chat não vão para o banco (pesado demais para guardar
+ * como texto) — mas para apagar com segurança é preciso saber quem mandou.
+ * Fica em memória, como o resto do estado efêmero, com uma limpeza
+ * periódica para não crescer para sempre. */
+const midiaEfemera = new Map(); // id -> { authorId, channelId, at }
+
+setInterval(() => {
+  const corte = Date.now() - 48 * 60 * 60 * 1000;
+  for (const [id, m] of midiaEfemera) {
+    if (m.at < corte) midiaEfemera.delete(id);
+  }
+}, 60 * 60 * 1000).unref();
+
 const salaDoCanal = (channelId) => `voz:${channelId}`;
 const salaDoGuild = (guildId) => `guild:${guildId}`;
 
@@ -346,8 +359,34 @@ io.on('connection', (socket) => {
   });
 
   /* Apagar: o próprio autor sempre pode; apagar de outra pessoa exige
-   * MANAGE_MESSAGES. */
+   * MANAGE_MESSAGES. Imagem e áudio não estão no banco (são efêmeros),
+   * então são checados contra `midiaEfemera` antes de tentar como mensagem
+   * de texto — sem essa checagem, um id que não é UUID quebrava a consulta
+   * no Postgres e o pedido de apagar simplesmente dava erro. */
   socket.on('chat-delete', async ({ id } = {}) => {
+    if (typeof id !== 'string') return;
+
+    const midia = midiaEfemera.get(id);
+    if (midia) {
+      const ctx = await podeTexto(midia.channelId);
+      if (!ctx) return;
+      const meuTexto = midia.authorId === eu.id;
+      if (!meuTexto && !ctx.can(P.MANAGE_MESSAGES)) {
+        return socket.emit('forced', { reason: 'Você só pode apagar as suas mensagens.' });
+      }
+      midiaEfemera.delete(id);
+      io.to(`texto:${midia.channelId}`).emit('chat-delete', { id });
+      if (!meuTexto) {
+        await store.audit(ctx.channel.guildId, eu.id, 'apagou_mensagem', midia.authorId, { mensagem: id });
+      }
+      return;
+    }
+
+    // Mensagem de texto de verdade tem id uuid; imagem/áudio que já saiu
+    // da limpeza de 48h e não é mais achado em nenhum dos dois lados cai
+    // aqui — sem isso um id de mídia velho quebrava a consulta no Postgres.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return;
+
     const dono = await store.messageAuthor(id);
     if (!dono) return;
     const ctx = await podeTexto(dono.channelId);
@@ -407,8 +446,10 @@ io.on('connection', (socket) => {
       return socket.emit('forced', { reason: 'Você não pode escrever neste canal.' });
     }
 
+    const id = novoId();
+    midiaEfemera.set(id, { authorId: eu.id, channelId, at: Date.now() });
     io.to(`texto:${channelId}`).emit('image', {
-      id: novoId(), kind: 'image', uid: eu.id, name: eu.name, channelId,
+      id, kind: 'image', uid: eu.id, name: eu.name, channelId,
       data, mime: typeof mime === 'string' ? mime.slice(0, 40) : 'image/png',
       fileName: String(fileName || 'imagem').slice(0, 60), at: Date.now(), reactions: {}
     });
@@ -420,8 +461,10 @@ io.on('connection', (socket) => {
     const ctx = await podeTexto(channelId, P.SEND_MESSAGES);
     if (!ctx || ctx.negado) return;
 
+    const id = novoId();
+    midiaEfemera.set(id, { authorId: eu.id, channelId, at: Date.now() });
     io.to(`texto:${channelId}`).emit('voice-note', {
-      id: novoId(), kind: 'audio', uid: eu.id, name: eu.name, channelId,
+      id, kind: 'audio', uid: eu.id, name: eu.name, channelId,
       data, mime: typeof mime === 'string' ? mime.slice(0, 60) : 'audio/webm',
       seconds: Number(seconds) || 0, at: Date.now(), reactions: {}
     });
