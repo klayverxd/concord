@@ -149,7 +149,11 @@ io.use(auth.socketAuth);
 io.use(async (socket, next) => {
   try {
     // Garante linha em `users` — as chaves estrangeiras dependem dela.
-    await store.upsertUser(socket.user);
+    // upsertUser já devolve o avatar customizado com prioridade sobre o
+    // do login, então a voz/roster/chamada usam a foto certa sem outra
+    // consulta.
+    const row = await store.upsertUser(socket.user);
+    if (row.avatar_url) socket.user.avatar = row.avatar_url;
     next();
   } catch (err) {
     next(new Error('não foi possível registrar sua conta'));

@@ -474,7 +474,7 @@
       li.style.flexWrap = 'wrap';
 
       const av = elem('span', 'avatar avatar-sm');
-      C.paintAvatar(av, m.name);
+      C.paintAvatar(av, m.name, m.avatar);
       li.appendChild(av);
       li.appendChild(elem('span', 'admin-item-nome', m.name));
       if (m.id === dados.guild.ownerId) li.appendChild(elem('span', 'admin-sub', 'dono'));

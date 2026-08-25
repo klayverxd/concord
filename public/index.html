@@ -396,6 +396,19 @@
           </section>
 
           <section data-pane="perfil" hidden>
+            <div class="setting avatar-setting">
+              <span class="setting-label">Foto de perfil</span>
+              <div class="avatar-setting-row">
+                <span class="avatar avatar-lg" id="avatarPreview"></span>
+                <div class="avatar-setting-actions">
+                  <button id="avatarUploadBtn" type="button" class="btn-test-voice">Escolher foto</button>
+                  <button id="avatarRemoveBtn" type="button" class="btn-test-voice">Remover foto</button>
+                </div>
+              </div>
+              <input id="avatarFileInput" type="file" accept="image/*" hidden />
+              <small id="avatarMsg" style="display:block;margin-top:8px;color:var(--txt-dim);font-size:12px;"></small>
+            </div>
+
             <label class="setting">
               <span class="setting-label">Apelido neste servidor</span>
               <input id="nicknameInput" class="setting-input" type="text" maxlength="32" placeholder="seu nome de verdade, se deixar vazio" />

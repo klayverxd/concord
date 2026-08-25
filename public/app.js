@@ -68,6 +68,8 @@ const el = {
   settings: $('settings'), settingsClose: $('settingsClose'),
   settingsNav: $('settingsNav'), settingsPane: $('settingsPane'),
   nicknameInput: $('nicknameInput'), nicknameSaveBtn: $('nicknameSaveBtn'), nicknameMsg: $('nicknameMsg'),
+  avatarPreview: $('avatarPreview'), avatarUploadBtn: $('avatarUploadBtn'), avatarRemoveBtn: $('avatarRemoveBtn'),
+  avatarFileInput: $('avatarFileInput'), avatarMsg: $('avatarMsg'),
   micSelect: $('micSelect'), outputRow: $('outputRow'), outSelect: $('outSelect'),
   qualitySelect: $('qualitySelect'), pttCheck: $('pttCheck'), testBar: $('testBar'),
   testVoiceBtn: $('testVoiceBtn'),
@@ -168,9 +170,15 @@ function initialsFor(name) {
   return (a + b).toUpperCase();
 }
 
-function paintAvatar(node, name) {
+function paintAvatar(node, name, avatarSrc) {
   node.style.background = colorFor(name);
-  node.textContent = initialsFor(name);
+  node.textContent = '';
+  if (!avatarSrc) { node.textContent = initialsFor(name); return; }
+  const img = document.createElement('img');
+  img.alt = '';
+  img.src = avatarSrc;
+  img.onerror = () => { img.remove(); node.textContent = initialsFor(name); };
+  node.appendChild(img);
 }
 
 function icon(id, cls) {
@@ -475,7 +483,7 @@ function montarTela() {
   el.roomName.textContent = state.guild.name;
   el.railInitials.textContent = initialsFor(state.guild.name);
   el.meName.textContent = state.user.name;
-  paintAvatar(el.meAvatar, state.user.name);
+  paintAvatar(el.meAvatar, state.user.name, state.user.avatar);
   document.title = `${state.guild.name} · Concord`;
 
   startAudioContext();
@@ -614,7 +622,7 @@ function renderRoster(channelId) {
 
     const av = document.createElement('span');
     av.className = 'avatar avatar-sm';
-    paintAvatar(av, p.name);
+    paintAvatar(av, p.name, p.avatar);
 
     const nome = document.createElement('span');
     nome.className = 'vmember-name';
@@ -838,7 +846,7 @@ let chamadaRingInterval = null;
 
 function mostrarChamadaEntrante(convite) {
   chamadaAtual = convite;
-  paintAvatar(el.callBannerAvatar, convite.from.name);
+  paintAvatar(el.callBannerAvatar, convite.from.name, convite.from.avatar);
   el.callBannerName.textContent = `${convite.from.name} está te chamando`;
   el.callBannerChannel.textContent = `Canal de voz: ${convite.channel.name}`;
   el.callBanner.hidden = false;
@@ -1089,7 +1097,7 @@ function buildNodes(m) {
   tile.append(video, face, tlabel, full);
   el.tiles.appendChild(tile);
 
-  paintAvatar(tavatar, m.name);
+  paintAvatar(tavatar, m.name, m.avatar);
 
   updateTiles();
   return { tile, video, tmute, tvolume };
@@ -1179,7 +1187,7 @@ function itemMembro(m) {
 
   const av = document.createElement('span');
   av.className = 'avatar';
-  paintAvatar(av, m.name);
+  paintAvatar(av, m.name, m.avatar);
 
   const nome = document.createElement('span');
   nome.className = 'member-name';
@@ -1198,7 +1206,7 @@ function estaNoMeuCanal(userId) {
 }
 
 function abrirPerfil(m, anchor) {
-  paintAvatar(el.profileAvatar, m.name);
+  paintAvatar(el.profileAvatar, m.name, m.avatar);
   el.profileName.textContent = m.id === state.user?.id ? `${m.name} (você)` : m.name;
 
   const online = state.presentUserIds.has(m.id);
@@ -2358,7 +2366,7 @@ function candidatosMencao() {
     const chave = m.name.toLowerCase();
     if (vistos.has(chave)) return;
     vistos.add(chave);
-    lista.push({ id: m.id, nome: m.name });
+    lista.push({ id: m.id, nome: m.name, avatar: m.avatar });
   });
   return lista;
 }
@@ -2388,7 +2396,7 @@ function renderMencaoPop() {
     if (c.id !== 'todos') {
       const av = document.createElement('span');
       av.className = 'avatar';
-      paintAvatar(av, c.nome);
+      paintAvatar(av, c.nome, c.avatar);
       li.appendChild(av);
     }
     li.appendChild(document.createTextNode(c.nome));
@@ -2566,7 +2574,7 @@ function renderMessage(m, old) {
   if (!grouped) {
     const avatar = document.createElement('span');
     avatar.className = 'avatar';
-    paintAvatar(avatar, m.name);
+    paintAvatar(avatar, m.name, m.avatar);
     gutter.appendChild(avatar);
   }
 
@@ -3174,6 +3182,8 @@ el.settingsBtn.addEventListener('click', () => {
   const eu = state.guildMembers.get(state.user?.id);
   el.nicknameInput.value = (eu && eu.name !== eu.realName) ? eu.name : '';
   el.nicknameMsg.textContent = '';
+  paintAvatar(el.avatarPreview, state.user?.name, state.user?.avatar);
+  el.avatarMsg.textContent = '';
 });
 el.settingsClose.addEventListener('click', closeSettings);
 el.settings.addEventListener('click', (e) => { if (e.target === el.settings) closeSettings(); });
@@ -3213,6 +3223,72 @@ el.nicknameSaveBtn.addEventListener('click', async () => {
     el.nicknameMsg.textContent = err.message || 'Não deu para salvar.';
   }
 });
+
+/* --------------------------- foto de perfil --------------------------- */
+
+/* Redimensiona e corta pro quadrado ANTES de saída do navegador — é o que
+ * evita a sobrecarga de alguém mandando uma foto de 4K: o servidor nunca
+ * vê o arquivo original, só um jpeg pequeno e de qualidade fixa. */
+function redimensionarImagem(file, tamanho = 160, qualidade = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const lado = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - lado) / 2;
+      const sy = (img.naturalHeight - lado) / 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = tamanho;
+      canvas.height = tamanho;
+      canvas.getContext('2d').drawImage(img, sx, sy, lado, lado, 0, 0, tamanho, tamanho);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL('image/jpeg', qualidade));
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error('Não deu para ler essa imagem.')); };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+el.avatarUploadBtn.addEventListener('click', () => el.avatarFileInput.click());
+
+el.avatarFileInput.addEventListener('change', async () => {
+  const file = el.avatarFileInput.files[0];
+  el.avatarFileInput.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) return toast('Escolha um arquivo de imagem.');
+
+  el.avatarMsg.textContent = 'Preparando…';
+  try {
+    const dataUri = await redimensionarImagem(file);
+    el.avatarMsg.textContent = 'Enviando…';
+    const { user } = await api('/me/avatar', { method: 'PATCH', body: JSON.stringify({ avatar: dataUri }) });
+    aplicarNovoAvatar(user.avatar);
+    el.avatarMsg.textContent = 'Foto salva.';
+  } catch (err) {
+    el.avatarMsg.textContent = err.message || 'Não deu para enviar a foto.';
+  }
+});
+
+el.avatarRemoveBtn.addEventListener('click', async () => {
+  el.avatarMsg.textContent = 'Removendo…';
+  try {
+    await api('/me/avatar', { method: 'PATCH', body: JSON.stringify({ avatar: null }) });
+    aplicarNovoAvatar(null);
+    el.avatarMsg.textContent = 'Foto removida — voltou ao avatar do login.';
+  } catch (err) {
+    el.avatarMsg.textContent = err.message || 'Não deu para remover.';
+  }
+});
+
+function aplicarNovoAvatar(avatarUrl) {
+  state.user.avatar = avatarUrl;
+  const eu = state.guildMembers.get(state.user.id);
+  if (eu) eu.avatar = avatarUrl;
+  if (state.me) state.me.avatar = avatarUrl;
+  paintAvatar(el.avatarPreview, state.user.name, avatarUrl);
+  paintAvatar(el.meAvatar, state.user.name, avatarUrl);
+  renderMemberList();
+  if (state.voiceChannel) meuRosterPatch({ avatar: avatarUrl });
+}
 
 async function loadDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return;
