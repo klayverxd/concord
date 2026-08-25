@@ -2979,7 +2979,7 @@ document.addEventListener('click', (e) => {
     pop.contains(e.target) || extra.some((sel) => e.target.closest?.(sel));
 
   if (!el.emojiPop.hidden && !inside(el.emojiPop, '#emojiBtn', '.msg-action')) el.emojiPop.hidden = true;
-  if (!el.volumePop.hidden && !inside(el.volumePop, '.member', '.tile-volume')) el.volumePop.hidden = true;
+  if (!el.volumePop.hidden && !inside(el.volumePop, '.member', '.tile-volume', '.vmember')) el.volumePop.hidden = true;
   if (!el.statusPop.hidden && !inside(el.statusPop, '#meCard')) el.statusPop.hidden = true;
   if (!el.soundPop.hidden && !inside(el.soundPop, '#soundBtn', '#toolSound')) el.soundPop.hidden = true;
   if (!el.profilePop.hidden && !inside(el.profilePop, '.member', '.vmember')) el.profilePop.hidden = true;
