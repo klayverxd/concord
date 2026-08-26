@@ -578,10 +578,32 @@ html, body {
   box-shadow: 0 0 0 1px var(--online), 0 0 26px rgba(52, 224, 122, .3);
 }
 .tile[data-video='true'] { background: #000; cursor: zoom-in; }
+.tile[data-camera='true'][data-video='false'] { background: #000; cursor: zoom-in; }
 .tile[data-focused='true'] { cursor: zoom-out; }
-.tile video { width: 100%; height: 100%; object-fit: contain; display: none; }
-.tile[data-video='true'] video { display: block; }
-.tile[data-video='true'] .tile-face { display: none; }
+.tile-screen { width: 100%; height: 100%; object-fit: contain; display: none; }
+.tile[data-video='true'] .tile-screen { display: block; }
+.tile[data-video='true'] .tile-face,
+.tile[data-camera='true'] .tile-face { display: none; }
+
+/* Câmera é um vídeo separado da transmissão de tela — as duas podem estar
+ * ativas ao mesmo tempo. Sem tela: a câmera ocupa o quadro todo, igual a
+ * uma chamada de vídeo comum. Com tela sendo assistida: encolhe pra um
+ * canto, tipo "quadro pequeno" (picture-in-picture). */
+.tile-cam {
+  display: none;
+  object-fit: cover;
+  z-index: 1;
+}
+.tile[data-camera='true'] .tile-cam { display: block; }
+.tile[data-camera='true'][data-video='false'] .tile-cam {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+}
+.tile[data-camera='true'][data-video='true'] .tile-cam {
+  position: absolute; bottom: 10px; left: 10px; z-index: 4;
+  width: 92px; height: 62px; border-radius: 8px;
+  border: 2px solid var(--line);
+  box-shadow: 0 4px 12px var(--sombra);
+}
 
 .tile-face { display: grid; place-items: center; gap: 10px; padding: 12px; }
 .tile-face .tile-who { font-size: 14px; color: var(--txt-dim); }

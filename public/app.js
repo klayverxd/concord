@@ -35,7 +35,7 @@ const el = {
   liveBadge: $('liveBadge'), unreadPill: $('unreadPill'),
   voiceMembers: $('voiceMembers'), membersPane: $('membersPane'),
   vsState: $('vsState'), vsRoom: $('vsRoom'),
-  shareBtn: $('shareBtn'), leaveBtn: $('leaveBtn'),
+  shareBtn: $('shareBtn'), cameraBtn: $('cameraBtn'), leaveBtn: $('leaveBtn'),
   meCard: $('meCard'), meAvatar: $('meAvatar'), meName: $('meName'), meNote: $('meNote'),
   micBtn: $('micBtn'), deafBtn: $('deafBtn'), settingsBtn: $('settingsBtn'),
 
@@ -46,6 +46,7 @@ const el = {
   stageView: $('stageView'), tiles: $('tiles'), stageEmpty: $('stageEmpty'),
   soundTest: $('soundTest'),
   stageShareBtn: $('stageShareBtn'), stageShareLabel: $('stageShareLabel'),
+  stageCameraBtn: $('stageCameraBtn'), stageCameraLabel: $('stageCameraLabel'),
   stageMicBtn: $('stageMicBtn'), stageMicLabel: $('stageMicLabel'),
   stageLeaveBtn: $('stageLeaveBtn'),
 
@@ -102,7 +103,7 @@ const state = {
   me: null, room: null, name: null, socket: null, joined: false,
   mic: null,            // microfone cru vindo do getUserMedia
   outStream: null,      // o que realmente vai para os pares (mistura)
-  screen: null,
+  screen: null, camera: null,
   deaf: false, ptt: false, pttHeld: false,
   status: 'online', note: '', statusBeforeAway: null,
   view: 'stage', focused: null,
@@ -634,6 +635,7 @@ function renderRoster(channelId) {
     const icons = document.createElement('span');
     icons.className = 'vmember-icons';
     if (p.sharing) icons.appendChild(icon('i-screen', 'vicon-share'));
+    if (p.camera) icons.appendChild(icon('i-camera', 'vicon-share'));
     if (p.muted) icons.appendChild(icon('i-mic-off', 'vicon-mute'));
     if (p.deaf) icons.appendChild(icon('i-headset-off', 'vicon-mute'));
 
@@ -726,14 +728,16 @@ function conectar() {
     refreshCount();
   });
 
-  socket.on('peer-state', ({ id, channelId, muted, sharing, deaf, screenId }) => {
-    rosterUpsert(channelId, { id, muted, sharing, deaf });
+  socket.on('peer-state', ({ id, channelId, muted, sharing, deaf, screenId, camera, cameraId }) => {
+    rosterUpsert(channelId, { id, muted, sharing, deaf, camera });
 
     const m = state.members.get(id);
     if (!m) return;
     if (typeof muted === 'boolean') m.muted = muted;
     if (typeof sharing === 'boolean') m.sharing = sharing;
     if (typeof deaf === 'boolean') m.deaf = deaf;
+    if (typeof camera === 'boolean') m.camera = camera;
+    if (cameraId !== undefined) m.cameraId = cameraId;
 
     const oldScreenId = m.screenId;
     if (screenId !== undefined) m.screenId = screenId;
@@ -742,10 +746,11 @@ function conectar() {
     if (oldScreenId && oldScreenId !== m.screenId) dropAudioByStream(id, oldScreenId);
 
     const peer = state.peers.get(id);
-    if (peer) { applyVolume(id); refreshMeter(peer); }
+    if (peer) { applyVolume(id); refreshMeter(peer); classificarTracksPendentes(peer, m); }
 
     paintMember(id);
     if (sharing === false) clearVideo(id);
+    if (camera === false) clearCamera(id);
     if (state.volumeTarget === id && !el.volumePop.hidden) {
       openVolume(id, state.nodes.get(id)?.tile || el.tiles);
     }
@@ -922,7 +927,7 @@ async function entrarNaVoz(channelId, religando) {
    * `watch-guild` tenha chegado antes desta entrada existir. */
   rosterUpsert(channelId, {
     id: state.me.id, userId: state.user.id, name: state.me.name, avatar: state.user.avatar,
-    muted: !micOn, sharing: false, deaf: state.deaf
+    muted: !micOn, sharing: false, deaf: state.deaf, camera: false
   });
 
   reply.peers.forEach((p) => {
@@ -1015,7 +1020,7 @@ function setVoiceState(text, ok) {
 function upsertMember(info) {
   const prev = state.members.get(info.id);
   const m = Object.assign(
-    { muted: false, sharing: false, deaf: false, status: 'online', note: '', mine: false },
+    { muted: false, sharing: false, deaf: false, camera: false, status: 'online', note: '', mine: false },
     prev, info
   );
   state.members.set(m.id, m);
@@ -1044,11 +1049,19 @@ function buildNodes(m) {
   tile.className = 'tile';
   tile.dataset.id = m.id;
   tile.dataset.video = 'false';
+  tile.dataset.camera = 'false';
 
   const video = document.createElement('video');
+  video.className = 'tile-screen';
   video.autoplay = true;
   video.playsInline = true;
   video.muted = true; // o áudio da tela chega pelo elemento <audio> do par
+
+  const camVideo = document.createElement('video');
+  camVideo.className = 'tile-cam';
+  camVideo.autoplay = true;
+  camVideo.playsInline = true;
+  camVideo.muted = true; // câmera não tem áudio próprio — a voz já vem pelo mic
 
   const face = document.createElement('div');
   face.className = 'tile-face';
@@ -1121,17 +1134,17 @@ function buildNodes(m) {
   }
 
   tile.addEventListener('click', () => {
-    if (tile.dataset.video !== 'true') return;
+    if (tile.dataset.video !== 'true' && tile.dataset.camera !== 'true') return;
     setFocus(state.focused === m.id ? null : m.id);
   });
 
-  tile.append(video, face, tlabel, full);
+  tile.append(camVideo, video, face, tlabel, full);
   el.tiles.appendChild(tile);
 
   paintAvatar(tavatar, m.name, m.avatar);
 
   updateTiles();
-  return { tile, video, tmute, tvolume, twatch };
+  return { tile, video, camVideo, tmute, tvolume, twatch };
 }
 
 function paintMember(id) {
@@ -1287,7 +1300,7 @@ function atualizarPalco() {
   const naVoz = Boolean(state.voiceChannel);
   setShown(el.stageEmpty, !naVoz);
   el.tiles.hidden = !naVoz;
-  [el.stageShareBtn, el.stageMicBtn, el.stageLeaveBtn, el.shareBtn].forEach((b) => {
+  [el.stageShareBtn, el.stageCameraBtn, el.stageMicBtn, el.stageLeaveBtn, el.shareBtn, el.cameraBtn].forEach((b) => {
     if (b) b.disabled = !naVoz;
   });
 }
@@ -1579,15 +1592,20 @@ function ensurePeer(id, name) {
     id, name, pc,
     polite: state.me.id > id,
     makingOffer: false, ignoreOffer: false,
-    screenSenders: [], audioEls: [], meterAudio: null, stats: null
+    screenSenders: [], cameraSenders: [], audioEls: [], meterAudio: null, stats: null,
+    tracksPendentes: []
   };
   state.peers.set(id, peer);
 
   // Vai a mistura, não o microfone cru: assim trocar de microfone ou tocar
   // um som não mexe na faixa que os pares já estão recebendo.
   state.outStream.getAudioTracks().forEach((t) => pc.addTrack(t, state.outStream));
-  // A tela NÃO vai automaticamente pro par novo — só depois que ele pedir
-  // pra assistir (comecarAAssistir), pelo mesmo motivo do startShare().
+  // Câmera é como o microfone: todo mundo do canal recebe direto, sem
+  // pedir — é a tela que fica atrás do botão "Assistir" (comecarAAssistir),
+  // não a câmera.
+  if (state.camera) {
+    state.camera.getTracks().forEach((t) => peer.cameraSenders.push(pc.addTrack(t, state.camera)));
+  }
 
   pc.onnegotiationneeded = async () => {
     try {
@@ -1608,8 +1626,17 @@ function ensurePeer(id, name) {
     if (pc.iceConnectionState === 'failed') pc.restartIce();
   };
   pc.ontrack = ({ track, streams }) => {
-    if (track.kind === 'video') receiveScreen(peer, track);
-    else receiveAudio(peer, track, streams?.[0]?.id || '');
+    if (track.kind === 'video') {
+      // As duas viagens são vídeo — o que diferencia é o id do stream
+      // bater com o cameraId/screenId que a pessoa anunciou no peer-state.
+      // Mídia (aqui) e sinalização (socket.io) viajam por canais
+      // diferentes sem ordem garantida entre si — se a track chegar antes
+      // do peer-state que diz qual é qual, classificarTrackDeVideo() guarda
+      // pra tentar de novo quando o peer-state chegar.
+      classificarTrackDeVideo(peer, track, streams?.[0]?.id || '');
+    } else {
+      receiveAudio(peer, track, streams?.[0]?.id || '');
+    }
   };
 
   return peer;
@@ -1765,6 +1792,26 @@ function pararDeAssistir(peerId) {
   peer.screenSenders = [];
 }
 
+/** Decide se uma track de vídeo que chegou é câmera ou tela, comparando o
+ * id do stream contra o que o peer-state já disse. Se ainda não souber
+ * (peer-state atrasado), guarda pra classificarTracksPendentes() tentar de
+ * novo assim que ele chegar. */
+function classificarTrackDeVideo(peer, track, streamId) {
+  const m = state.members.get(peer.id);
+  if (m?.cameraId && streamId === m.cameraId) return receiveCamera(peer, track);
+  if (m?.screenId && streamId === m.screenId) return receiveScreen(peer, track);
+  peer.tracksPendentes.push({ track, streamId });
+}
+
+function classificarTracksPendentes(peer, m) {
+  if (!peer.tracksPendentes.length) return;
+  peer.tracksPendentes = peer.tracksPendentes.filter(({ track, streamId }) => {
+    if (m.cameraId && streamId === m.cameraId) { receiveCamera(peer, track); return false; }
+    if (m.screenId && streamId === m.screenId) { receiveScreen(peer, track); return false; }
+    return true;
+  });
+}
+
 function receiveScreen(peer, track) {
   showVideo(peer.id, new MediaStream([track]));
   // Não força mais a ida pro palco — só acende o selo "ao vivo" no canal;
@@ -1801,6 +1848,96 @@ function clearVideo(id) {
   n.tile.dataset.video = 'false';
   if (state.focused === id) setFocus(null);
   updateTiles();
+}
+
+/* --------------------------- câmera --------------------------- */
+
+/* Câmera é como o microfone — todo mundo do canal já vê direto, sem
+ * precisar clicar em nada (diferente da transmissão de tela, que é
+ * opt-in). O quadro da câmera fica por cima do avatar; se a pessoa também
+ * estiver com a tela sendo assistida, a câmera encolhe pra um canto. */
+[el.cameraBtn, el.stageCameraBtn].forEach((b) => {
+  b.addEventListener('click', () => (state.camera ? stopCamera() : startCamera()));
+});
+
+async function startCamera() {
+  if (!state.voiceChannel) {
+    return toast('Entre num canal de voz primeiro.');
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return toast('Este navegador não acessa a câmera.');
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } }
+    });
+  } catch (_) {
+    return toast('Não deu para acessar a câmera — verifique a permissão.');
+  }
+
+  state.camera = stream;
+  state.peers.forEach((peer) => {
+    stream.getTracks().forEach((t) => peer.cameraSenders.push(peer.pc.addTrack(t, stream)));
+  });
+
+  stream.getVideoTracks()[0].addEventListener('ended', stopCamera);
+  showCamera(state.me.id, stream);
+
+  paintCameraButtons(true);
+  state.socket.emit('state', { camera: true, cameraId: stream.id });
+  const me = state.members.get(state.me.id);
+  if (me) { me.camera = true; me.cameraId = stream.id; }
+  meuRosterPatch({ camera: true });
+}
+
+function stopCamera() {
+  if (!state.camera) return;
+
+  state.camera.getTracks().forEach((t) => t.stop());
+  state.peers.forEach((peer) => {
+    peer.cameraSenders.forEach((s) => { try { peer.pc.removeTrack(s); } catch (_) {} });
+    peer.cameraSenders = [];
+  });
+  state.camera = null;
+  clearCamera(state.me.id);
+
+  paintCameraButtons(false);
+  state.socket.emit('state', { camera: false, cameraId: null });
+  const me = state.members.get(state.me.id);
+  if (me) { me.camera = false; me.cameraId = null; }
+  meuRosterPatch({ camera: false });
+}
+
+function paintCameraButtons(on) {
+  el.cameraBtn.dataset.live = String(on);
+  el.cameraBtn.querySelector('span').textContent = on ? 'Parar câmera' : 'Ligar câmera';
+  el.stageCameraLabel.textContent = on ? 'Parar câmera' : 'Ligar câmera';
+  el.stageCameraBtn.dataset.on = on ? 'false' : 'true';
+}
+
+function receiveCamera(peer, track) {
+  showCamera(peer.id, new MediaStream([track]));
+
+  const aoPararDeChegar = () => clearCamera(peer.id);
+  track.addEventListener('mute', aoPararDeChegar);
+  track.addEventListener('ended', aoPararDeChegar);
+}
+
+function showCamera(id, stream) {
+  const n = state.nodes.get(id);
+  if (!n) return;
+  n.camVideo.srcObject = stream;
+  n.camVideo.play().catch(() => {});
+  n.tile.dataset.camera = 'true';
+}
+
+function clearCamera(id) {
+  const n = state.nodes.get(id);
+  if (!n) return;
+  n.camVideo.srcObject = null;
+  n.tile.dataset.camera = 'false';
 }
 
 el.qualitySelect.addEventListener('change', async () => {

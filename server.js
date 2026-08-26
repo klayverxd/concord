@@ -219,6 +219,7 @@ io.on('connection', (socket) => {
         userId: eu.id, guildId: canal.guildId, channelId,
         name: meuNome, avatar: eu.avatar,
         muted: false, sharing: false, deaf: false, screenId: null,
+        camera: false, cameraId: null,
         serverMuted: false, status: 'online', note: ''
       };
 
@@ -311,7 +312,7 @@ io.on('connection', (socket) => {
 
   /* --------------------------- estado na voz --------------------------- */
 
-  socket.on('state', async ({ muted, sharing, deaf, screenId } = {}) => {
+  socket.on('state', async ({ muted, sharing, deaf, screenId, camera, cameraId } = {}) => {
     const v = voz.get(socket.id);
     if (!v) return;
 
@@ -333,9 +334,23 @@ io.on('connection', (socket) => {
     }
     if (screenId !== undefined) v.screenId = typeof screenId === 'string' ? screenId.slice(0, 80) : null;
 
+    // Câmera usa a mesma permissão de transmitir — quem pode compartilhar
+    // tela também pode ligar a câmera.
+    if (typeof camera === 'boolean') {
+      if (camera) {
+        const p = await permDaVoz(socket);
+        if (!p || !p.can(P.STREAM)) {
+          return socket.emit('forced', { reason: 'Você não pode ligar a câmera neste canal.', camera: false });
+        }
+      }
+      v.camera = camera;
+    }
+    if (cameraId !== undefined) v.cameraId = typeof cameraId === 'string' ? cameraId.slice(0, 80) : null;
+
     socket.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('peer-state', {
       id: socket.id, channelId: v.channelId,
-      muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId
+      muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId,
+      camera: v.camera, cameraId: v.cameraId
     });
   });
 
@@ -372,7 +387,8 @@ io.on('connection', (socket) => {
       if (v.guildId !== guildId) continue;
       (porCanal[v.channelId] ||= []).push({
         id: socketId, userId: v.userId, name: v.name, avatar: v.avatar,
-        muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId
+        muted: v.muted, sharing: v.sharing, deaf: v.deaf, screenId: v.screenId,
+        camera: v.camera, cameraId: v.cameraId
       });
     }
     const presentes = [...(presencaGuild.get(guildId)?.keys() || [])];
