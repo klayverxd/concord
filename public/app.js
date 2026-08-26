@@ -36,7 +36,7 @@ const el = {
   railInviteInput: $('railInviteInput'), railInviteBtn: $('railInviteBtn'),
   voiceChannel: $('voiceChannel'), textChannel: $('textChannel'),
   liveBadge: $('liveBadge'), unreadPill: $('unreadPill'),
-  voiceMembers: $('voiceMembers'), membersPane: $('membersPane'),
+  voiceMembers: $('voiceMembers'), membersList: $('membersList'), membersAd: $('membersAd'),
   vsState: $('vsState'), vsRoom: $('vsRoom'),
   shareBtn: $('shareBtn'), cameraBtn: $('cameraBtn'), leaveBtn: $('leaveBtn'),
   meCard: $('meCard'), meAvatar: $('meAvatar'), meName: $('meName'), meNote: $('meNote'),
@@ -221,6 +221,39 @@ function renderRailGuilds() {
     li.appendChild(b);
     el.railGuilds.appendChild(li);
   });
+}
+
+/* Anúncio (AdSense) no rodapé da coluna da direita — só existe de verdade
+ * com ADSENSE_CLIENT_ID e ADSENSE_SLOT_ID configurados no servidor (vêm
+ * pelo /api/config). Sem isso, #membersAd fica vazio e escondido, sem
+ * pedir nenhum script de fora.
+ *
+ * Só inicia uma vez: o <ins> do AdSense não deve ser recriado nem levar
+ * push() de novo, e montarTela() roda de novo a cada troca de servidor. */
+let anuncioIniciado = false;
+function montarAnuncio() {
+  if (anuncioIniciado) return;
+  if (!cfg?.adsenseClientId || !cfg?.adsenseSlotId) return;
+  anuncioIniciado = true;
+
+  const loader = document.createElement('script');
+  loader.async = true;
+  loader.crossOrigin = 'anonymous';
+  loader.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(cfg.adsenseClientId)}`;
+  loader.onload = () => {
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (_) { /* AdSense já loga o próprio erro */ }
+  };
+  document.head.appendChild(loader);
+
+  const ins = document.createElement('ins');
+  ins.className = 'adsbygoogle';
+  ins.style.display = 'block';
+  ins.dataset.adClient = cfg.adsenseClientId;
+  ins.dataset.adSlot = cfg.adsenseSlotId;
+  ins.dataset.adFormat = 'auto';
+  ins.dataset.fullWidthResponsive = 'true';
+  el.membersAd.appendChild(ins);
+  setShown(el.membersAd, true);
 }
 
 function icon(id, cls) {
@@ -621,6 +654,7 @@ function montarTela() {
   paintAvatar(el.meAvatar, state.user.name, state.user.avatar);
   document.title = `${state.guild.name} · Concord`;
 
+  montarAnuncio();
   startAudioContext();
   buildEmojiPop();
   buildStatusList();
@@ -1372,8 +1406,8 @@ function refreshCount() {
  * não só quem está numa chamada de voz. "Online" aqui é presença de app
  * aberto (state.presentUserIds), não presença de voz. */
 function renderMemberList() {
-  if (!el.membersPane) return;
-  el.membersPane.textContent = '';
+  if (!el.membersList) return;
+  el.membersList.textContent = '';
 
   const membros = [...state.guildMembers.values()];
   if (!membros.length) return;
@@ -1409,12 +1443,12 @@ function renderMemberList() {
       h.appendChild(dot);
     }
     h.appendChild(document.createTextNode(`${titulo} — ${lista.length}`));
-    el.membersPane.appendChild(h);
+    el.membersList.appendChild(h);
 
     const ul = document.createElement('ul');
     ul.className = 'member-list';
     ordenados(lista).forEach((m) => ul.appendChild(itemMembro(m)));
-    el.membersPane.appendChild(ul);
+    el.membersList.appendChild(ul);
   }
 
   cargos.forEach((r) => grupo(r.name, porCargo.get(r.id) || [], r.color));

@@ -949,10 +949,16 @@ html, body {
  * ------------------------------------------------------------------------ */
 
 .members {
-  min-height: 0; overflow-y: auto; padding: 10px 8px;
+  display: flex; flex-direction: column;
+  min-height: 0;
   background: linear-gradient(180deg, var(--panel), var(--deep));
   border-left: 1px solid var(--line);
 }
+.members-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 8px; }
+/* Reservado pra um anúncio (AdSense) — só aparece com ADSENSE_CLIENT_ID e
+ * ADSENSE_SLOT_ID configurados no servidor; sem isso fica sempre hidden,
+ * pra não pedir carregar script de anúncio em quem não configurou nada. */
+.members-ad { flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--line); }
 .member-list { list-style: none; margin: 0; padding: 0; }
 .member {
   display: flex; align-items: center; gap: 9px;
