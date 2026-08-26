@@ -1270,6 +1270,20 @@ kbd {
   box-shadow: 0 8px 26px rgba(0, 0, 0, .5);
 }
 
+.share-audio-hint {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  z-index: 55;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  max-width: min(calc(100vw - 32px), 480px);
+  padding: 13px 16px; border-radius: 18px;
+  background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 8px 26px var(--sombra);
+  font-size: 13px; color: var(--txt);
+}
+.share-audio-hint .ico:first-child { color: var(--cyan); flex: 0 0 auto; }
+.share-audio-hint span { flex: 1 1 100%; min-width: 200px; }
+.share-audio-hint select { flex: 1 1 auto; min-width: 140px; }
+
 .drop-zone {
   position: fixed; inset: 0; z-index: 65;
   display: grid; place-items: center;

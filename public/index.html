@@ -453,6 +453,18 @@
     <span>O navegador bloqueou o som. Toque aqui para liberar.</span>
   </button>
 
+  <!-- Linux (e às vezes outros) não oferecem "compartilhar áudio" ao
+       transmitir tela inteira/janela — só abas do navegador. Isso deixa
+       escolher um dispositivo de áudio (ex.: "Monitor of ..." no
+       PulseAudio/PipeWire) pra entrar na transmissão mesmo assim. -->
+  <div id="shareAudioHint" class="share-audio-hint" hidden>
+    <svg class="ico"><use href="#i-mic"/></svg>
+    <span>Sua transmissão está sem áudio — comum no Linux ao compartilhar tela ou janela. Quer usar um dispositivo de áudio como fonte?</span>
+    <select id="shareAudioSelect" class="setting-input"></select>
+    <button id="shareAudioAddBtn" type="button" class="btn-test-voice">Adicionar</button>
+    <button id="shareAudioCloseBtn" type="button" class="icon-btn" title="Fechar"><svg class="ico"><use href="#i-x"/></svg></button>
+  </div>
+
   <div id="dropZone" class="drop-zone" hidden><span>Solte a imagem para enviar</span></div>
   <div id="callBanner" class="call-banner" hidden>
     <span class="avatar avatar-lg" id="callBannerAvatar"></span>

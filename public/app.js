@@ -82,7 +82,9 @@ const el = {
   noiseThresholdVal: $('noiseThresholdVal'),
   thresholdMarker: $('thresholdMarker'),
 
-  audioUnlock: $('audioUnlock'), floats: $('floats'), audios: $('audios')
+  audioUnlock: $('audioUnlock'), floats: $('floats'), audios: $('audios'),
+  shareAudioHint: $('shareAudioHint'), shareAudioSelect: $('shareAudioSelect'),
+  shareAudioAddBtn: $('shareAudioAddBtn'), shareAudioCloseBtn: $('shareAudioCloseBtn')
 };
 
 const store = {
@@ -1745,9 +1747,7 @@ async function startShare() {
   updateLive();
   setView('stage');
 
-  if (!stream.getAudioTracks().length) {
-    toast('Transmitindo sem som. Para mandar o áudio junto, marque "compartilhar áudio" no seletor.');
-  }
+  if (!stream.getAudioTracks().length) mostrarDicaAudioTela();
 }
 
 function stopShare() {
@@ -1774,7 +1774,68 @@ function paintShareButtons(live) {
   el.shareBtn.querySelector('span').textContent = live ? 'Parar transmissão' : 'Transmitir tela';
   el.stageShareLabel.textContent = live ? 'Parar' : 'Transmitir tela';
   el.stageShareBtn.dataset.on = live ? 'false' : 'true';
+  if (!live) esconderDicaAudioTela();
 }
+
+/* --------------------------- áudio manual na transmissão --------------------------- *
+ * No Linux, Chrome e Firefox não capturam o áudio do sistema ao
+ * compartilhar a tela inteira ou uma janela (só funciona pra abas do
+ * navegador — limitação deles, não desta app). A saída usada por quem
+ * lida com isso no Linux é escolher como fonte um dispositivo de áudio
+ * que seja o "monitor" da saída de som (PulseAudio/PipeWire) — aqui isso
+ * fica disponível pra qualquer sistema, não só Linux. */
+
+async function mostrarDicaAudioTela() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  let devices;
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (_) { return; }
+
+  el.shareAudioSelect.textContent = '';
+  devices.filter((d) => d.kind === 'audioinput').forEach((d, i) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Dispositivo de áudio ${i + 1}`;
+    el.shareAudioSelect.appendChild(opt);
+  });
+  if (!el.shareAudioSelect.children.length) return; // nada pra oferecer
+
+  el.shareAudioHint.hidden = false;
+}
+
+function esconderDicaAudioTela() {
+  el.shareAudioHint.hidden = true;
+}
+
+el.shareAudioCloseBtn.addEventListener('click', esconderDicaAudioTela);
+
+el.shareAudioAddBtn.addEventListener('click', async () => {
+  if (!state.screen) return esconderDicaAudioTela();
+  const deviceId = el.shareAudioSelect.value;
+  if (!deviceId) return toast('Não deu para identificar esse dispositivo — tente escolher de novo.');
+
+  let som;
+  try {
+    som = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+  } catch (_) {
+    return toast('Não deu para usar esse dispositivo de áudio.');
+  }
+
+  const track = som.getAudioTracks()[0];
+  if (!track) return;
+
+  state.screen.addTrack(track);
+  // Quem já estava assistindo tem a conexão montada com a lista de tracks
+  // de ANTES — precisa receber esta faixa nova diretamente, sem esperar
+  // pedir de novo.
+  state.peers.forEach((peer) => {
+    if (peer.screenSenders.length) peer.screenSenders.push(peer.pc.addTrack(track, state.screen));
+  });
+
+  track.addEventListener('ended', () => { try { state.screen?.removeTrack(track); } catch (_) {} });
+
+  esconderDicaAudioTela();
+  toast('Áudio adicionado à transmissão.', 'ok');
+});
 
 /* Do lado de quem transmite: alguém pediu pra assistir, ou parou de
  * assistir. Cada par tem sua própria decisão — a mesma transmissão pode
