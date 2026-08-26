@@ -43,20 +43,34 @@ if (config.isProd) app.set('trust proxy', 1);
  * em acesso direto corta para menos de um terço. */
 app.use(compression());
 
-/* O script de verificação/carregamento do AdSense precisa estar no HTML
- * cru de "/", visível pro rastreador do Google sem passar por login nem
- * rodar o app inteiro — é por isso que ele não pode vir só de dentro do
- * app.js (que só executa depois da pessoa entrar). Ler o arquivo direto
- * (sem cache em memória) porque é pouca coisa e evita servir versão
- * velha depois de editar o index.html em dev. */
+/* Verificação de site do AdSense — o primeiro método (só o script) não
+ * bastou, então aqui vão os três que o próprio AdSense oferece: script,
+ * meta tag, e ads.txt. Nenhum passa por login nem depende de o app
+ * inteiro rodar — é por isso que precisam estar aqui, não em app.js. Ler o
+ * arquivo direto (sem cache em memória) porque é pouca coisa e evita
+ * servir versão velha depois de editar o index.html em dev. */
 app.get(['/', '/index.html'], (_req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
   if (config.adsense.clientId) {
-    const tag = `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${config.adsense.clientId}" crossorigin="anonymous"></script>\n`;
-    html = html.replace('</head>', `${tag}</head>`);
+    const tags = [
+      `<meta name="google-adsense-account" content="${config.adsense.clientId}">`,
+      `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${config.adsense.clientId}" crossorigin="anonymous"></script>`
+    ].join('\n') + '\n';
+    html = html.replace('</head>', `${tags}</head>`);
   }
   res.set('Cache-Control', 'no-cache');
   res.type('html').send(html);
+});
+
+/* ads.txt: terceiro método de verificação, e também o que impede outro
+ * site de "vender" seu inventário de anúncio se fingindo de você. O ID
+ * f08c47fec0942fa0 é fixo — é do Google, igual pra todo publisher de
+ * AdSense, não é específico desta conta. */
+app.get('/ads.txt', (_req, res) => {
+  if (!config.adsense.clientId) return res.status(404).end();
+  const pub = config.adsense.clientId.replace(/^ca-/, '');
+  res.set('Cache-Control', 'no-cache');
+  res.type('text/plain').send(`google.com, ${pub}, DIRECT, f08c47fec0942fa0\n`);
 });
 
 /* `no-cache` não quer dizer "não guarde": quer dizer "pergunte antes de
