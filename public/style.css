@@ -288,14 +288,18 @@ html, body {
 }
 .gate-link:hover { color: var(--txt); }
 
+/* De propósito NÃO cresce pra ocupar o espaço todo (sem flex-grow): com a
+ * lista curta, isso empurrava o "+" pro fundo do rail, bem onde a barra de
+ * perfil "vaza" por cima (.userbar, mais abaixo) — ficava escondido atrás
+ * dela. Empacotado assim, o "+" some da mesma lista, logo depois do último
+ * servidor. Só quando a lista realmente não cabe é que o rail inteiro
+ * rola (regra em .rail). */
 .rail-guilds {
   display: flex; flex-direction: column; align-items: center; gap: 9px;
   list-style: none; margin: 0; padding: 0;
   width: 100%;
-  flex: 1 1 auto; min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
 }
-.rail-guilds li { flex: 0 0 auto; }
 
 .gate-status { margin: 14px 0 0; color: var(--cyan); font-size: 13px; }
 .gate-error { margin: 14px 0 0; color: var(--busy); font-size: 13px; min-height: 1em; }
@@ -328,6 +332,7 @@ html, body {
   padding: 12px 0;
   background: var(--void);
   border-right: 1px solid var(--line);
+  overflow-y: auto;
 }
 .rail-icon {
   display: grid; place-items: center;
@@ -955,10 +960,25 @@ html, body {
   border-left: 1px solid var(--line);
 }
 .members-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 8px; }
-/* Reservado pra um anúncio (AdSense) — só aparece com ADSENSE_CLIENT_ID e
- * ADSENSE_SLOT_ID configurados no servidor; sem isso fica sempre hidden,
- * pra não pedir carregar script de anúncio em quem não configurou nada. */
+/* Reservado pra um anúncio (AdSense). Com ADSENSE_CLIENT_ID e
+ * ADSENSE_SLOT_ID configurados no servidor, mostra o anúncio de verdade;
+ * sem isso, o .meme-ad aqui abaixo ocupa o lugar — nunca fica vazio nem
+ * pede nenhum script de fora sem essas duas variáveis. */
 .members-ad { flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--line); }
+
+/* Enquanto não tem anúncio de verdade configurado. */
+.meme-ad {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 16px 10px; text-align: center;
+  border-radius: 10px;
+  background: linear-gradient(160deg, var(--raised), var(--hover));
+}
+.meme-ad-emoji { font-size: 30px; line-height: 1; }
+.meme-ad-top {
+  margin: 0; font-size: 13px; font-weight: 800; letter-spacing: .01em;
+  text-transform: uppercase; color: var(--txt-bright);
+}
+.meme-ad-bottom { margin: 0; font-size: 11px; color: var(--txt-dim); }
 .member-list { list-style: none; margin: 0; padding: 0; }
 .member {
   display: flex; align-items: center; gap: 9px;

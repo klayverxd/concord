@@ -233,8 +233,22 @@ function renderRailGuilds() {
 let anuncioIniciado = false;
 function montarAnuncio() {
   if (anuncioIniciado) return;
-  if (!cfg?.adsenseClientId || !cfg?.adsenseSlotId) return;
   anuncioIniciado = true;
+
+  // Enquanto o AdSense não está configurado (conta ainda não aprovada,
+  // ou só não tem os IDs no .env), o espaço não fica vazio — mostra um
+  // meme no lugar. Assim que os dois valores existirem, isso aqui é
+  // pulado e o anúncio de verdade entra no lugar dele.
+  if (!cfg?.adsenseClientId || !cfg?.adsenseSlotId) {
+    el.membersAd.innerHTML = `
+      <div class="meme-ad">
+        <span class="meme-ad-emoji">🙃</span>
+        <p class="meme-ad-top">aqui vai ter propaganda</p>
+        <p class="meme-ad-bottom">quando o Google decidir que a gente é confiável</p>
+      </div>`;
+    setShown(el.membersAd, true);
+    return;
+  }
 
   const loader = document.createElement('script');
   loader.async = true;
@@ -811,19 +825,23 @@ function renderRoster(channelId) {
     ul.appendChild(li);
     avatares.set(p.id, av);
 
-    // No MESMO canal em que estou: clique ajusta o volume da pessoa (como
-    // antes, só que agora a partir do roster). Em outro canal: abre o
-    // perfil, de onde dá para chamar a pessoa para esta chamada. Passar o
-    // mouse sempre mostra o perfil, mesmo em quem está no meu canal — o
-    // clique continua reservado pro volume nesse caso.
-    li.addEventListener('click', () => {
+    // No MESMO canal em que estou: volume (a única coisa que faz sentido
+    // com quem já estou ouvindo — perfil não). Em outro canal: perfil, de
+    // onde dá para chamar a pessoa para esta chamada. Clique e hover
+    // seguem exatamente a mesma regra, só que hover com o atraso de sempre.
+    function decidirEAbrir(comAtraso) {
       if (p.userId === state.user?.id) return;
-      if (channelId === state.voiceChannel?.id) return openVolume(p.id, li);
+      if (channelId === state.voiceChannel?.id) {
+        return comAtraso ? hoverVolume.agendarAbrir(p.id, li) : openVolume(p.id, li);
+      }
       const guildMember = state.guildMembers.get(p.userId);
-      if (guildMember) abrirPerfil(guildMember, li);
-    });
+      if (!guildMember) return;
+      comAtraso ? hoverPerfil.agendarAbrir(guildMember, li) : abrirPerfil(guildMember, li);
+    }
+    li.addEventListener('click', () => decidirEAbrir(false));
     if (p.userId !== state.user?.id) {
-      ativarHoverPerfil(li, () => state.guildMembers.get(p.userId));
+      li.addEventListener('mouseenter', () => decidirEAbrir(true));
+      li.addEventListener('mouseleave', () => { hoverVolume.agendarFechar(); hoverPerfil.agendarFechar(); });
     }
   });
   state.rosterMemberEls.set(channelId, avatares);
@@ -1125,7 +1143,11 @@ async function entrarNaVoz(channelId, religando) {
     id: state.me.id, name: state.me.name, muted: !micOn, sharing: false,
     deaf: false, status: state.status, note: state.note, mine: true
   });
-  attachMeter(state.me.id, state.mic);
+  // O anel de "falando" tem que refletir o que REALMENTE sai — depois da
+  // supressão de ruído e do noise gate, não o microfone cru. Sem isso, um
+  // ruído de fundo que a supressão já cortaria (ventilador, teclado) ainda
+  // acendia o anel, mesmo a pessoa não estando falando de verdade.
+  attachMeter(state.me.id, state.outStream);
 
   /* Eu mesmo nunca chego por `peer-joined` (o servidor exclui o remetente
    * do broadcast) — então o roster deste canal só fica completo se eu me
@@ -1531,36 +1553,47 @@ function abrirPerfil(m, anchor) {
   el.profilePop.style.top = `${Math.max(8, Math.min(r.top, innerHeight - pop.height - 8))}px`;
 }
 
-/* Perfil também abre passando o mouse — sem precisar clicar — na coluna da
- * direita e nos canais de voz. Um atraso pra abrir evita flash ao só
- * passar o cursor de raspão; outro pra fechar dá tempo de mover até o
- * próprio popup sem ele sumir no caminho. Se já está aberto (navegando de
- * pessoa em pessoa), a troca é na hora — só a primeira espera. */
-let hoverPerfilAbre = null;
-let hoverPerfilFecha = null;
+/* Popup que também abre passando o mouse — sem precisar clicar. Um atraso
+ * pra abrir evita flash ao só passar o cursor de raspão; outro pra fechar
+ * dá tempo de mover até o próprio popup sem ele sumir no caminho. Se já
+ * está aberto (navegando de pessoa em pessoa), a troca é na hora — só a
+ * primeira espera. Genérico porque tanto o perfil (coluna da direita e
+ * canais de voz) quanto o volume (canais de voz, de quem está no meu)
+ * precisam do mesmo comportamento de hover. */
+function criarHoverPopup(pop, abrirFn) {
+  let abreTimer = null;
+  let fechaTimer = null;
 
-function agendarAbrirPerfil(m, anchor) {
-  clearTimeout(hoverPerfilFecha);
-  clearTimeout(hoverPerfilAbre);
-  if (!el.profilePop.hidden) { abrirPerfil(m, anchor); return; }
-  hoverPerfilAbre = setTimeout(() => abrirPerfil(m, anchor), 350);
+  function agendarAbrir(...args) {
+    clearTimeout(fechaTimer);
+    clearTimeout(abreTimer);
+    if (!pop.hidden) { abrirFn(...args); return; }
+    abreTimer = setTimeout(() => abrirFn(...args), 350);
+  }
+
+  function agendarFechar() {
+    clearTimeout(abreTimer);
+    fechaTimer = setTimeout(() => { pop.hidden = true; }, 200);
+  }
+
+  pop.addEventListener('mouseenter', () => clearTimeout(fechaTimer));
+  pop.addEventListener('mouseleave', agendarFechar);
+
+  return { agendarAbrir, agendarFechar };
 }
 
-function agendarFecharPerfil() {
-  clearTimeout(hoverPerfilAbre);
-  hoverPerfilFecha = setTimeout(() => { el.profilePop.hidden = true; }, 200);
-}
+const hoverPerfil = criarHoverPopup(el.profilePop, abrirPerfil);
+const hoverVolume = criarHoverPopup(el.volumePop, openVolume);
 
+/* Perfil no hover: coluna da direita (sempre) e canais de voz (só quem
+ * não está no meu canal — de quem está, o hover mostra o volume). */
 function ativarHoverPerfil(elemento, getMembro) {
   elemento.addEventListener('mouseenter', () => {
     const m = getMembro();
-    if (m) agendarAbrirPerfil(m, elemento);
+    if (m) hoverPerfil.agendarAbrir(m, elemento);
   });
-  elemento.addEventListener('mouseleave', agendarFecharPerfil);
+  elemento.addEventListener('mouseleave', hoverPerfil.agendarFechar);
 }
-
-el.profilePop.addEventListener('mouseenter', () => clearTimeout(hoverPerfilFecha));
-el.profilePop.addEventListener('mouseleave', agendarFecharPerfil);
 
 function updateTiles() {
   el.tiles.dataset.solo = String(el.tiles.children.length === 1 && !state.focused);
@@ -4041,8 +4074,10 @@ async function switchMic(deviceId) {
   state.mic = stream;
   connectMicToMix();
 
-  state.meters.delete(state.me.id);
-  attachMeter(state.me.id, stream);
+  // O anel de "falando" está preso a state.outStream (o mixDest), que não
+  // muda ao trocar de microfone — connectMicToMix() só reconecta o novo
+  // mic na mesma cadeia. Reanexar aqui de novo no stream cru desfaria a
+  // correção: voltaria a medir antes da supressão de ruído.
   if (!el.settings.hidden) {
     buildTestMeter();
     if (testVoiceActive) updateTestVoiceRoute();
