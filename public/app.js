@@ -440,6 +440,7 @@ async function iniciar() {
   if (convite) {
     try {
       const r = await api(`/invites/${encodeURIComponent(convite)}/accept`, { method: 'POST' });
+      if (!state.guilds.some((g) => g.id === r.guild.id)) state.guilds.push(r.guild);
       history.replaceState(null, '', location.pathname);
       return abrirServidor(r.guild.id);
     } catch (err) {
@@ -447,10 +448,10 @@ async function iniciar() {
     }
   }
 
-  mostrarEscolha();
+  mostrarEscolha({ resumirUltimo: true });
 }
 
-function mostrarEscolha() {
+function mostrarEscolha({ resumirUltimo = false } = {}) {
   el.gateLoading.hidden = true;
   el.gateLogin.hidden = true;
   el.gatePick.hidden = false;
@@ -477,10 +478,39 @@ function mostrarEscolha() {
     el.guildPick.appendChild(li);
   });
 
-  // Último servidor usado volta selecionado.
+  // Último servidor usado volta selecionado — só ao entrar no app. Pedir a
+  // tela de escolher de propósito (o ícone do rail) tem que MOSTRAR a
+  // escolha, não pular direto de volta pra onde já estava.
+  if (!resumirUltimo) return;
   const ultimo = store.get('servidor', '');
   if (ultimo && state.guilds.some((g) => g.id === ultimo)) abrirServidor(ultimo);
 }
+
+/* Sai do servidor atual de volta pra tela de escolher — o rail só tem uma
+ * vaga de ícone (não é uma lista de servidores como o Discord), então sem
+ * isso, criar ou abrir outro servidor parecia estar "substituindo" o que
+ * já tinha, e não havia como voltar pro anterior de dentro do app. */
+function voltarParaEscolha() {
+  if (!state.guild) return;
+  if (state.joined || state.voiceChannel) {
+    stopShare();
+    tearDownRoom();
+  }
+  if (state.socket) {
+    state.socket.removeAllListeners();
+    state.socket.disconnect();
+    state.socket = null;
+  }
+  state.guild = null;
+  state.voiceChannel = null;
+  state.textChannel = null;
+  state.joined = false;
+
+  el.app.hidden = true;
+  el.gate.hidden = false;
+  mostrarEscolha();
+}
+el.railHome.addEventListener('click', voltarParaEscolha);
 
 el.newGuildBtn.addEventListener('click', async () => {
   const name = el.newGuildInput.value.trim();
@@ -489,6 +519,7 @@ el.newGuildBtn.addEventListener('click', async () => {
   el.pickError.textContent = '';
   try {
     const r = await api('/guilds', { method: 'POST', body: JSON.stringify({ name }) });
+    state.guilds.push(r.guild);
     await abrirServidor(r.guild.id);
   } catch (err) {
     el.pickError.textContent = err.message;
@@ -504,6 +535,7 @@ el.inviteBtn.addEventListener('click', async () => {
   el.pickError.textContent = '';
   try {
     const r = await api(`/invites/${encodeURIComponent(code)}/accept`, { method: 'POST' });
+    if (!state.guilds.some((g) => g.id === r.guild.id)) state.guilds.push(r.guild);
     await abrirServidor(r.guild.id);
   } catch (err) {
     el.pickError.textContent = err.message;
@@ -4086,6 +4118,7 @@ async function criarServidorViaPopup() {
   el.createGuildError.textContent = '';
   try {
     const r = await api('/guilds', { method: 'POST', body: JSON.stringify({ name }) });
+    state.guilds.push(r.guild); // sem isso, ele só aparecia na lista depois de um recarregar
     el.createGuildPop.hidden = true;
     await abrirServidor(r.guild.id);
   } catch (err) {
