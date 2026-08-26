@@ -105,7 +105,7 @@ const state = {
   me: null, room: null, name: null, socket: null, joined: false,
   mic: null,            // microfone cru vindo do getUserMedia
   outStream: null,      // o que realmente vai para os pares (mistura)
-  screen: null, camera: null,
+  screen: null, camera: null, streamViewers: new Set(),
   deaf: false, ptt: false, pttHeld: false,
   status: 'online', note: '', statusBeforeAway: null,
   view: 'stage', focused: null,
@@ -736,6 +736,9 @@ function conectar() {
     const m = state.members.get(id);
     if (!m) return;
     if (typeof muted === 'boolean') m.muted = muted;
+    // Anúncio de "começou a transmitir" — só quando é de fato uma
+    // transição de desligado pra ligado, e não pra quem está transmitindo.
+    if (sharing === true && m.sharing !== true && id !== state.me?.id) playSound('live');
     if (typeof sharing === 'boolean') m.sharing = sharing;
     if (typeof deaf === 'boolean') m.deaf = deaf;
     if (typeof camera === 'boolean') m.camera = camera;
@@ -783,6 +786,11 @@ function conectar() {
   socket.on('signal', handleSignal);
   socket.on('watch-stream', ({ from }) => comecarAAssistir(from));
   socket.on('stop-watch-stream', ({ from }) => pararDeAssistir(from));
+  socket.on('stream-viewers', ({ id, viewers }) => {
+    const m = state.members.get(id);
+    if (m) m.streamViewers = viewers;
+    renderStreamViewers(id);
+  });
   socket.on('chat', (m) => renderMessage(m));
   socket.on('voice-note', (m) => renderMessage(m));
   socket.on('image', (m) => renderMessage(m));
@@ -1064,6 +1072,11 @@ function buildNodes(m) {
   camVideo.autoplay = true;
   camVideo.playsInline = true;
   camVideo.muted = true; // câmera não tem áudio próprio — a voz já vem pelo mic
+  tornarCameraArrastavel(tile, camVideo);
+
+  const viewersBox = document.createElement('span');
+  viewersBox.className = 'tile-viewers';
+  setShown(viewersBox, false);
 
   const face = document.createElement('div');
   face.className = 'tile-face';
@@ -1140,13 +1153,13 @@ function buildNodes(m) {
     setFocus(state.focused === m.id ? null : m.id);
   });
 
-  tile.append(camVideo, video, face, tlabel, full);
+  tile.append(camVideo, video, face, viewersBox, tlabel, full);
   el.tiles.appendChild(tile);
 
   paintAvatar(tavatar, m.name, m.avatar);
 
   updateTiles();
-  return { tile, video, camVideo, tmute, tvolume, twatch };
+  return { tile, video, camVideo, viewersBox, tmute, tvolume, twatch };
 }
 
 function paintMember(id) {
@@ -1158,6 +1171,31 @@ function paintMember(id) {
   // é o roster (renderRoster), que não depende de sessão rica nenhuma.
   setShown(n.tmute, m.muted === true);
   n.tile.dataset.sharing = String(m.sharing === true);
+}
+
+/** O "monte de avatares" no canto do quadro de quem transmite, com quem
+ * está assistindo agora — visível pra todo mundo do canal, não só pra
+ * quem transmite (do jeito Discord mostra o contador/avatares da live). */
+function renderStreamViewers(id) {
+  const n = state.nodes.get(id);
+  if (!n) return;
+  const viewers = state.members.get(id)?.streamViewers || [];
+
+  n.viewersBox.textContent = '';
+  viewers.slice(0, 5).forEach((uid) => {
+    const info = state.guildMembers.get(uid);
+    const av = document.createElement('span');
+    av.className = 'avatar avatar-xs';
+    paintAvatar(av, info?.name || '?', info?.avatar);
+    n.viewersBox.appendChild(av);
+  });
+  if (viewers.length > 5) {
+    const resto = document.createElement('span');
+    resto.className = 'avatar avatar-xs viewers-mais';
+    resto.textContent = `+${viewers.length - 5}`;
+    n.viewersBox.appendChild(resto);
+  }
+  setShown(n.viewersBox, viewers.length > 0);
 }
 
 function refreshCount() {
@@ -1760,6 +1798,8 @@ function stopShare() {
   });
   state.screen = null;
   clearVideo(state.me.id);
+  state.streamViewers.clear();
+  emitirViewers();
 
   paintShareButtons(false);
   state.socket.emit('state', { sharing: false, screenId: null });
@@ -1844,6 +1884,10 @@ function comecarAAssistir(peerId) {
   const peer = state.peers.get(peerId);
   if (!peer || !state.screen || peer.screenSenders.length) return;
   state.screen.getTracks().forEach((t) => peer.screenSenders.push(peer.pc.addTrack(t, state.screen)));
+
+  playSound('espectador');
+  state.streamViewers.add(peerId);
+  emitirViewers();
 }
 
 function pararDeAssistir(peerId) {
@@ -1851,6 +1895,28 @@ function pararDeAssistir(peerId) {
   if (!peer) return;
   peer.screenSenders.forEach((s) => { try { peer.pc.removeTrack(s); } catch (_) {} });
   peer.screenSenders = [];
+
+  state.streamViewers.delete(peerId);
+  emitirViewers();
+}
+
+/* Quem está assistindo a MINHA transmissão, pro resto do canal ver (o
+ * "monte de avatares" no canto, do jeito Discord). Cada pessoa decide se
+ * assiste ou não (comecarAAssistir/pararDeAssistir) — isso aqui só avisa
+ * o canal de quem está na lista agora. */
+function emitirViewers() {
+  if (!state.socket) return;
+  const userIds = [...state.streamViewers]
+    .map((id) => state.members.get(id)?.userId)
+    .filter(Boolean);
+  // O servidor usa socket.to() pra avisar o canal, o que exclui quem
+  // emitiu — então a própria pessoa transmitindo nunca recebe de volta o
+  // que ela mesma mandou. Por isso atualiza a própria tela aqui direto,
+  // sem depender da viagem de ida e volta pelo servidor.
+  const me = state.members.get(state.me.id);
+  if (me) me.streamViewers = userIds;
+  renderStreamViewers(state.me.id);
+  state.socket.emit('stream-viewers', { viewers: userIds });
 }
 
 /** Decide se uma track de vídeo que chegou é câmera ou tela, comparando o
@@ -1999,6 +2065,110 @@ function clearCamera(id) {
   if (!n) return;
   n.camVideo.srcObject = null;
   n.tile.dataset.camera = 'false';
+}
+
+/* Quando a câmera vira um quadradinho por cima da transmissão de tela
+ * (PIP), dá pra arrastar e redimensionar — cada pessoa ajusta do jeito
+ * que quiser na própria tela, isso não é combinado com mais ninguém. */
+function tornarCameraArrastavel(tile, camVideo) {
+  const TAMANHO_MIN = 70;
+  const FRACAO_MAX = 0.6;
+
+  const alca = document.createElement('span');
+  alca.className = 'tile-cam-resize';
+  tile.appendChild(alca);
+
+  let arrastou = false;
+
+  function emPip() {
+    return tile.dataset.video === 'true' && tile.dataset.camera === 'true';
+  }
+
+  function posicionarAlca() {
+    alca.style.left = `${camVideo.offsetLeft + camVideo.offsetWidth - 8}px`;
+    alca.style.top = `${camVideo.offsetTop + camVideo.offsetHeight - 8}px`;
+  }
+
+  // Sai do bottom/left fixo do CSS pra um left/top manual, começando
+  // exatamente de onde a câmera já estava — sem esse passo o primeiro
+  // arraste "salta" pra outro lugar antes de seguir o mouse.
+  function fixarPosicaoAtual() {
+    if (camVideo.style.left) return;
+    camVideo.style.left = `${camVideo.offsetLeft}px`;
+    camVideo.style.top = `${camVideo.offsetTop}px`;
+    camVideo.style.right = 'auto';
+    camVideo.style.bottom = 'auto';
+    camVideo.style.width = `${camVideo.offsetWidth}px`;
+    camVideo.style.height = `${camVideo.offsetHeight}px`;
+  }
+
+  function arrastar(e) {
+    if (!emPip()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fixarPosicaoAtual();
+
+    const tileRect = tile.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY;
+    const startLeft = camVideo.offsetLeft, startTop = camVideo.offsetTop;
+    arrastou = false;
+
+    function mover(ev) {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) arrastou = true;
+      const left = Math.max(0, Math.min(startLeft + dx, tileRect.width - camVideo.offsetWidth));
+      const top = Math.max(0, Math.min(startTop + dy, tileRect.height - camVideo.offsetHeight));
+      camVideo.style.left = `${left}px`;
+      camVideo.style.top = `${top}px`;
+      posicionarAlca();
+    }
+    function soltar() {
+      document.removeEventListener('mousemove', mover);
+      document.removeEventListener('mouseup', soltar);
+    }
+    document.addEventListener('mousemove', mover);
+    document.addEventListener('mouseup', soltar);
+  }
+
+  function redimensionar(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    fixarPosicaoAtual();
+
+    const tileRect = tile.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY;
+    const startW = camVideo.offsetWidth, startH = camVideo.offsetHeight;
+
+    function mover(ev) {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      const largura = Math.max(TAMANHO_MIN, Math.min(startW + dx, tileRect.width * FRACAO_MAX));
+      const altura = Math.max(TAMANHO_MIN * 0.66, Math.min(startH + dy, tileRect.height * FRACAO_MAX));
+      camVideo.style.width = `${largura}px`;
+      camVideo.style.height = `${altura}px`;
+      posicionarAlca();
+    }
+    function soltar() {
+      document.removeEventListener('mousemove', mover);
+      document.removeEventListener('mouseup', soltar);
+    }
+    document.addEventListener('mousemove', mover);
+    document.addEventListener('mouseup', soltar);
+  }
+
+  camVideo.addEventListener('mousedown', arrastar);
+  alca.addEventListener('mousedown', redimensionar);
+
+  // Depois de um arraste de verdade, o click que vem no mouseup não pode
+  // vazar pro tile e disparar o zoom do palco.
+  camVideo.addEventListener('click', (e) => {
+    if (arrastou) { e.stopPropagation(); arrastou = false; }
+  });
+
+  // Entrar/saír do modo PIP muda a posição padrão (CSS) da câmera — a
+  // alça precisa seguir, tanto nessas trocas quanto durante o arraste.
+  new MutationObserver(posicionarAlca)
+    .observe(tile, { attributes: true, attributeFilter: ['data-video', 'data-camera'] });
+  posicionarAlca();
 }
 
 el.qualitySelect.addEventListener('change', async () => {
@@ -2317,7 +2487,19 @@ const SONS = {
     tom(d, { freq: 120, para: 88, quando: 0, dur: .18, vol: .16, tipo: 'sawtooth' });
     tom(d, { freq: 130, para: 92, quando: .16, dur: .18, vol: .16, tipo: 'sawtooth' });
     tom(d, { freq: 118, para: 80, quando: .32, dur: .24, vol: .14, tipo: 'sawtooth' });
-  }
+  },
+
+  // alguém começou a transmitir: um arpejo subindo, mais "anúncio" que
+  // entrar/sair — três notas em vez de duas.
+  live: (d) => {
+    sino(d, NOTA.C5, 0, .28, .15, 2.5);
+    sino(d, NOTA.E5, .07, .3, .16, 2.5);
+    sino(d, NOTA.C6, .14, .4, .2, 3);
+  },
+
+  // alguém entrou pra assistir a SUA transmissão: curto e vivo, pra quem
+  // transmite notar sem confundir com mensagem comum.
+  espectador: (d) => { sino(d, NOTA.G5, 0, .18, .14, 3.5); sino(d, NOTA.B5, .06, .22, .15, 3.5); }
 };
 
 /* A soundboard: estes SAEM no seu áudio, todo mundo no canal ouve. */

@@ -310,6 +310,18 @@ io.on('connection', (socket) => {
     io.to(to).emit('stop-watch-stream', { from: socket.id });
   });
 
+  /* Quem está assistindo a transmissão de quem — quem manda é a própria
+   * pessoa transmitindo, pra o canal inteiro mostrar o "monte de
+   * avatares" no canto do quadro dela. */
+  socket.on('stream-viewers', ({ viewers } = {}) => {
+    const v = voz.get(socket.id);
+    if (!v) return;
+    const limpo = Array.isArray(viewers) ? viewers.filter((x) => typeof x === 'string').slice(0, 50) : [];
+    socket.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('stream-viewers', {
+      id: socket.id, viewers: limpo
+    });
+  });
+
   /* --------------------------- estado na voz --------------------------- */
 
   socket.on('state', async ({ muted, sharing, deaf, screenId, camera, cameraId } = {}) => {
