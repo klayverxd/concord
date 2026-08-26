@@ -107,9 +107,9 @@
 <div id="app" class="app" hidden>
 
   <nav class="rail">
-    <button id="railHome" class="rail-icon is-active mono" type="button" title="Voltar aos servidores">CO</button>
+    <ul id="railGuilds" class="rail-guilds"></ul>
     <div class="rail-sep"></div>
-    <button id="railCreate" class="rail-icon rail-btn" title="Criar servidor"><svg class="ico"><use href="#i-plus"/></svg></button>
+    <button id="railCreate" class="rail-icon rail-btn" title="Criar ou entrar num servidor"><svg class="ico"><use href="#i-plus"/></svg></button>
   </nav>
 
   <aside id="sidebar" class="sidebar">
@@ -233,6 +233,14 @@
       <input id="createGuildInput" class="pop-input" type="text" maxlength="60" placeholder="Os Cria" />
     </label>
     <button id="createGuildBtn" class="btn btn-primary btn-block" type="button">Criar</button>
+
+    <span class="pop-title create-guild-pop-sep">Entrar com convite</span>
+    <label class="pop-field">
+      <span class="pop-label">Código</span>
+      <input id="railInviteInput" class="pop-input mono" type="text" maxlength="16" placeholder="ABCD2345" spellcheck="false" />
+    </label>
+    <button id="railInviteBtn" class="btn btn-dark btn-block" type="button">Entrar</button>
+
     <p id="createGuildError" class="gate-error" role="alert"></p>
   </div>
 

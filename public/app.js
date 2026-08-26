@@ -29,10 +29,11 @@ const el = {
   callBannerAccept: $('callBannerAccept'), callBannerDecline: $('callBannerDecline'),
   profilePop: $('profilePop'), profileAvatar: $('profileAvatar'), profileName: $('profileName'),
   profileStatus: $('profileStatus'), profileRoles: $('profileRoles'), profileCallBtn: $('profileCallBtn'),
-  railHome: $('railHome'), railCreate: $('railCreate'),
+  railGuilds: $('railGuilds'), railCreate: $('railCreate'),
   sidebar: $('sidebar'), roomName: $('roomName'),
   createGuildPop: $('createGuildPop'), createGuildInput: $('createGuildInput'),
   createGuildBtn: $('createGuildBtn'), createGuildError: $('createGuildError'),
+  railInviteInput: $('railInviteInput'), railInviteBtn: $('railInviteBtn'),
   voiceChannel: $('voiceChannel'), textChannel: $('textChannel'),
   liveBadge: $('liveBadge'), unreadPill: $('unreadPill'),
   voiceMembers: $('voiceMembers'), membersPane: $('membersPane'),
@@ -186,18 +187,40 @@ function paintAvatar(node, name, avatarSrc) {
   node.appendChild(img);
 }
 
-/* O ícone do servidor no topo do rail — diferente de paintAvatar() porque
- * sem foto ele usa o gradiente azul do .is-active (definido no CSS), não
- * uma cor por hash do nome. */
-function pintarIconeServidor() {
-  el.railHome.textContent = '';
-  const src = state.guild?.icon;
-  if (!src) { el.railHome.textContent = initialsFor(state.guild.name); return; }
-  const img = document.createElement('img');
-  img.alt = '';
-  img.src = src;
-  img.onerror = () => { img.remove(); el.railHome.textContent = initialsFor(state.guild.name); };
-  el.railHome.appendChild(img);
+/* O rail com TODOS os servidores da pessoa, igual ao Discord — antes só
+ * mostrava o que estava aberto, numa vaga só, e trocar de servidor exigia
+ * voltar pra tela de escolher. Cada ícone já leva direto pro servidor
+ * dele; o aberto agora ganha o gradiente do .is-active (definido no CSS),
+ * os outros uma cor por hash do nome, igual paintAvatar() já faz. */
+function renderRailGuilds() {
+  el.railGuilds.textContent = '';
+  state.guilds.forEach((g) => {
+    const ativo = g.id === state.guild?.id;
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = ativo ? 'rail-icon is-active' : 'rail-icon';
+    b.title = g.name;
+    b.addEventListener('click', () => { if (!ativo) abrirServidor(g.id); });
+
+    const pintarFallback = () => {
+      b.textContent = initialsFor(g.name);
+      b.classList.add('mono');
+      if (!ativo) b.style.background = colorFor(g.name);
+    };
+    if (g.icon) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = g.icon;
+      img.onerror = () => { img.remove(); pintarFallback(); };
+      b.appendChild(img);
+    } else {
+      pintarFallback();
+    }
+
+    li.appendChild(b);
+    el.railGuilds.appendChild(li);
+  });
 }
 
 function icon(id, cls) {
@@ -448,10 +471,10 @@ async function iniciar() {
     }
   }
 
-  mostrarEscolha({ resumirUltimo: true });
+  mostrarEscolha();
 }
 
-function mostrarEscolha({ resumirUltimo = false } = {}) {
+function mostrarEscolha() {
   el.gateLoading.hidden = true;
   el.gateLogin.hidden = true;
   el.gatePick.hidden = false;
@@ -478,39 +501,12 @@ function mostrarEscolha({ resumirUltimo = false } = {}) {
     el.guildPick.appendChild(li);
   });
 
-  // Último servidor usado volta selecionado — só ao entrar no app. Pedir a
-  // tela de escolher de propósito (o ícone do rail) tem que MOSTRAR a
-  // escolha, não pular direto de volta pra onde já estava.
-  if (!resumirUltimo) return;
+  // Último servidor usado volta selecionado. Essa tela só aparece mesmo
+  // quando não há nenhum servidor pra resumir — com o rail listando todos,
+  // não existe mais um caminho de volta pra ela a partir de dentro do app.
   const ultimo = store.get('servidor', '');
   if (ultimo && state.guilds.some((g) => g.id === ultimo)) abrirServidor(ultimo);
 }
-
-/* Sai do servidor atual de volta pra tela de escolher — o rail só tem uma
- * vaga de ícone (não é uma lista de servidores como o Discord), então sem
- * isso, criar ou abrir outro servidor parecia estar "substituindo" o que
- * já tinha, e não havia como voltar pro anterior de dentro do app. */
-function voltarParaEscolha() {
-  if (!state.guild) return;
-  if (state.joined || state.voiceChannel) {
-    stopShare();
-    tearDownRoom();
-  }
-  if (state.socket) {
-    state.socket.removeAllListeners();
-    state.socket.disconnect();
-    state.socket = null;
-  }
-  state.guild = null;
-  state.voiceChannel = null;
-  state.textChannel = null;
-  state.joined = false;
-
-  el.app.hidden = true;
-  el.gate.hidden = false;
-  mostrarEscolha();
-}
-el.railHome.addEventListener('click', voltarParaEscolha);
 
 el.newGuildBtn.addEventListener('click', async () => {
   const name = el.newGuildInput.value.trim();
@@ -620,7 +616,7 @@ async function abrirServidor(guildId) {
 
 function montarTela() {
   el.roomName.textContent = state.guild.name;
-  pintarIconeServidor();
+  renderRailGuilds();
   el.meName.textContent = state.user.name;
   paintAvatar(el.meAvatar, state.user.name, state.user.avatar);
   document.title = `${state.guild.name} · Concord`;
@@ -2377,6 +2373,10 @@ function tornarCameraArrastavel(tile, camVideo) {
   camVideo.addEventListener('click', (e) => {
     if (arrastou) { e.stopPropagation(); arrastou = false; }
   });
+  // A alça de redimensionar é um elemento à parte (não fica dentro da
+  // câmera) — sem isso, o click que vem depois de soltar o mouse vazava
+  // pro tile do mesmo jeito e minimizava a transmissão.
+  alca.addEventListener('click', (e) => e.stopPropagation());
 
   // Entrar/saír do modo PIP muda a posição padrão (CSS) da câmera — a
   // alça precisa seguir, tanto nessas trocas quanto durante o arraste.
@@ -4102,6 +4102,7 @@ el.railCreate.addEventListener('click', (e) => {
   e.stopPropagation();
   el.createGuildError.textContent = '';
   el.createGuildInput.value = '';
+  el.railInviteInput.value = '';
   el.createGuildPop.hidden = false;
   el.createGuildInput.focus();
 
@@ -4130,6 +4131,27 @@ async function criarServidorViaPopup() {
 el.createGuildBtn.addEventListener('click', criarServidorViaPopup);
 el.createGuildInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') criarServidorViaPopup();
+});
+
+async function entrarComConviteViaPopup() {
+  const code = el.railInviteInput.value.trim().toUpperCase();
+  if (!code) return;
+  el.railInviteBtn.disabled = true;
+  el.createGuildError.textContent = '';
+  try {
+    const r = await api(`/invites/${encodeURIComponent(code)}/accept`, { method: 'POST' });
+    if (!state.guilds.some((g) => g.id === r.guild.id)) state.guilds.push(r.guild);
+    el.createGuildPop.hidden = true;
+    await abrirServidor(r.guild.id);
+  } catch (err) {
+    el.createGuildError.textContent = err.message;
+  } finally {
+    el.railInviteBtn.disabled = false;
+  }
+}
+el.railInviteBtn.addEventListener('click', entrarComConviteViaPopup);
+el.railInviteInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') entrarComConviteViaPopup();
 });
 
 /* Sair do canal de voz não é sair do servidor: a conversa continua e você
@@ -4170,7 +4192,7 @@ function aplicarNovoIcone(iconUrl) {
   state.guild.icon = iconUrl;
   const g = state.guilds.find((x) => x.id === state.guild.id);
   if (g) g.icon = iconUrl;
-  pintarIconeServidor();
+  renderRailGuilds();
 }
 
 window.Concord = {

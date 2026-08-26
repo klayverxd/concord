@@ -288,7 +288,14 @@ html, body {
 }
 .gate-link:hover { color: var(--txt); }
 
-.rail-guilds { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+.rail-guilds {
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  list-style: none; margin: 0; padding: 0;
+  width: 100%;
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto;
+}
+.rail-guilds li { flex: 0 0 auto; }
 
 .gate-status { margin: 14px 0 0; color: var(--cyan); font-size: 13px; }
 .gate-error { margin: 14px 0 0; color: var(--busy); font-size: 13px; min-height: 1em; }
@@ -317,6 +324,7 @@ html, body {
 
 .rail {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
+  min-height: 0;
   padding: 12px 0;
   background: var(--void);
   border-right: 1px solid var(--line);
@@ -1054,6 +1062,7 @@ html, body {
 .status-pop { width: 250px; }
 .create-guild-pop { width: 240px; }
 .create-guild-pop .btn-block { margin-top: 12px; }
+.create-guild-pop-sep { display: block; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .status-list { list-style: none; margin: 0; padding: 0; }
 .status-opt {
   display: flex; align-items: center; gap: 10px;
