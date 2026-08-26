@@ -326,10 +326,12 @@ html, body {
   background: var(--raised); color: var(--txt-bright);
   font-size: 13px; font-weight: 700;
   cursor: pointer;
+  overflow: hidden;
   transition: border-radius .18s, transform .12s, box-shadow .18s;
 }
 .rail-icon:hover { border-radius: 13px; transform: translateY(-1px); }
 .rail-icon.is-active { background: var(--grad); color: #080b18; box-shadow: var(--glow-cyan); }
+.rail-icon img { width: 100%; height: 100%; object-fit: cover; }
 .rail-btn { color: var(--cyan); }
 .rail-btn:hover { background: var(--hover); box-shadow: var(--glow-cyan); }
 .rail-sep { width: 28px; height: 2px; border-radius: 2px; background: var(--line); }
@@ -461,7 +463,8 @@ html, body {
 .presence[data-status='ocupado'] { background: var(--busy); box-shadow: 0 0 8px rgba(251, 91, 120, .8); }
 .presence[data-status='volto'],
 .presence[data-status='ausente'] { background: var(--away); box-shadow: 0 0 8px rgba(252, 184, 74, .8); }
-.presence[data-status='invisivel'] { background: var(--offline); box-shadow: none; }
+.presence[data-status='invisivel'],
+.presence[data-status='offline'] { background: var(--offline); box-shadow: none; }
 
 /* painel de voz */
 .voice-status {
@@ -483,9 +486,12 @@ html, body {
   cursor: pointer;
 }
 .vs-hangup:hover { background: rgba(251, 91, 120, .18); color: var(--busy); }
+/* Lado a lado e só com o ícone — texto só ocupava linha à toa numa coluna
+ * já estreita. */
+.vs-share-row { display: flex; gap: 8px; }
 .vs-share {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; padding: 9px;
+  display: flex; align-items: center; justify-content: center;
+  flex: 1; padding: 8px;
   border: 1px solid var(--line); border-radius: 9px;
   background: var(--raised); color: var(--txt);
   font: inherit; font-size: 13px; font-weight: 600;
@@ -494,15 +500,25 @@ html, body {
 }
 .vs-share:hover { background: var(--hover); color: var(--txt-bright); box-shadow: var(--glow-cyan); }
 .vs-share[data-live='true'] { background: var(--busy); border-color: transparent; color: #fff; }
-.vs-share .ico { width: 17px; height: 17px; }
+.vs-share .ico { width: 18px; height: 18px; }
+.vs-share span { display: none; }
 
-/* barra da pessoa */
+/* barra da pessoa — no desktop, "vaza" para a esquerda por cima da coluna
+ * dos servidores, ocupando as duas colunas juntas embaixo (só nela: os
+ * ícones do rail continuam cada um na coluna dele). No celular o rail some
+ * e ela permanece só na largura do menu de canais, como antes. */
 .userbar {
   display: flex; align-items: center; gap: 4px;
   flex: 0 0 auto;
   padding: 9px 8px;
   background: var(--void);
   border-top: 1px solid var(--line);
+}
+@media (min-width: 761px) {
+  .userbar {
+    width: calc(100% + var(--rail-w));
+    margin-left: calc(-1 * var(--rail-w));
+  }
 }
 .userbar-card {
   display: flex; align-items: center; gap: 9px;
@@ -710,6 +726,10 @@ html, body {
 
 .stage-foot { display: flex; justify-content: center; gap: 9px; flex: 0 0 auto; }
 .stage-foot .ico { width: 18px; height: 18px; }
+/* Mic e fone ficam num grupinho à parte, no meio da barra — mais espaço
+ * entre eles e os botões vizinhos do que entre os dois. */
+.stage-foot-center { display: flex; gap: 9px; margin: 0 6px; }
+.btn-icon-only { padding: 10px; gap: 0; }
 
 /* ------------------------------ conversa ------------------------------ */
 

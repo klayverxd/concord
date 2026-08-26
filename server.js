@@ -87,9 +87,12 @@ const voz = new Map();
 
 /* Quem está de olho em cada servidor agora — app aberto ali, mesmo fora de
  * qualquer canal de voz. É o que permite a barra de "Online" mostrar todo
- * mundo do servidor, não só quem está numa chamada. Cada pessoa pode ter
- * mais de um socket (várias abas/dispositivos), por isso o valor é um Set. */
-/** @type {Map<string, Map<string, Set<string>>>} guildId -> userId -> Set(socketId) */
+ * mundo do servidor, não só quem está numa chamada, com status e recado
+ * inclusos (a bolinha da coluna da direita não depende de estar na voz).
+ * Cada pessoa pode ter mais de um socket (várias abas/dispositivos), por
+ * isso os sockets ficam num Set dentro do registro. */
+/** @type {Map<string, Map<string, {sockets: Set<string>, status: string, note: string}>>}
+ *  guildId -> userId -> {sockets, status, note} */
 const presencaGuild = new Map();
 /** @type {Map<string, string>} socketId -> guildId que ele está observando agora */
 const guildAtualDoSocket = new Map();
@@ -260,12 +263,17 @@ io.on('connection', (socket) => {
     if (!presencaGuild.has(guildId)) presencaGuild.set(guildId, new Map());
     const membros = presencaGuild.get(guildId);
     const jaTinha = membros.has(eu.id);
-    if (!jaTinha) membros.set(eu.id, new Set());
-    membros.get(eu.id).add(socket.id);
+    if (!jaTinha) membros.set(eu.id, { sockets: new Set(), status: 'online', note: '' });
+    const registro = membros.get(eu.id);
+    registro.sockets.add(socket.id);
     guildAtualDoSocket.set(socket.id, guildId);
     // Só avisa o servidor quando a PESSOA fica online — a segunda aba não é
     // novidade para ninguém.
-    if (!jaTinha) socket.to(salaDoGuild(guildId)).emit('presence-join', { userId: eu.id });
+    if (!jaTinha) {
+      socket.to(salaDoGuild(guildId)).emit('presence-join', {
+        userId: eu.id, status: registro.status, note: registro.note
+      });
+    }
   }
 
   function sairDaPresenca() {
@@ -273,10 +281,10 @@ io.on('connection', (socket) => {
     if (!guildId) return;
     guildAtualDoSocket.delete(socket.id);
     const membros = presencaGuild.get(guildId);
-    const sockets = membros?.get(eu.id);
-    if (!sockets) return;
-    sockets.delete(socket.id);
-    if (sockets.size === 0) {
+    const registro = membros?.get(eu.id);
+    if (!registro) return;
+    registro.sockets.delete(socket.id);
+    if (registro.sockets.size === 0) {
       membros.delete(eu.id);
       io.to(salaDoGuild(guildId)).emit('presence-leave', { userId: eu.id });
     }
@@ -367,14 +375,32 @@ io.on('connection', (socket) => {
   });
 
   socket.on('presence', ({ status, note } = {}) => {
-    const v = voz.get(socket.id);
-    if (!v) return;
     const validos = new Set(['online', 'ocupado', 'volto', 'ausente', 'invisivel']);
-    if (typeof status === 'string' && validos.has(status)) v.status = status;
-    if (typeof note === 'string') v.note = note.slice(0, 80);
-    socket.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('peer-presence', {
-      id: socket.id, channelId: v.channelId, status: v.status, note: v.note
-    });
+    const statusOk = typeof status === 'string' && validos.has(status) ? status : undefined;
+    const noteOk = typeof note === 'string' ? note.slice(0, 80) : undefined;
+
+    // Espelha nos pares do canal de voz, se houver um — é o que os quadros
+    // da chamada mostram.
+    const v = voz.get(socket.id);
+    if (v) {
+      if (statusOk) v.status = statusOk;
+      if (noteOk !== undefined) v.note = noteOk;
+      socket.to([salaDoCanal(v.channelId), salaDoGuild(v.guildId)]).emit('peer-presence', {
+        id: socket.id, channelId: v.channelId, status: v.status, note: v.note
+      });
+    }
+
+    // Presença de SERVIDOR — a bolinha da coluna da direita vale esteja ou
+    // não na voz, porque mudar o status também funciona fora dela.
+    const guildId = guildAtualDoSocket.get(socket.id);
+    const registro = guildId && presencaGuild.get(guildId)?.get(eu.id);
+    if (registro) {
+      if (statusOk) registro.status = statusOk;
+      if (noteOk !== undefined) registro.note = noteOk;
+      socket.to(salaDoGuild(guildId)).emit('presence-status', {
+        userId: eu.id, status: registro.status, note: registro.note
+      });
+    }
   });
 
   /* Presença de voz de TODO o servidor: quem entra nesta sala descobre quem
@@ -403,7 +429,8 @@ io.on('connection', (socket) => {
         camera: v.camera, cameraId: v.cameraId
       });
     }
-    const presentes = [...(presencaGuild.get(guildId)?.keys() || [])];
+    const presentes = [...(presencaGuild.get(guildId)?.entries() || [])]
+      .map(([userId, r]) => ({ userId, status: r.status, note: r.note }));
     responde({ channels: porCanal, presentes });
   });
 
@@ -423,8 +450,8 @@ io.on('connection', (socket) => {
       return responde({ error: 'Essa pessoa não está no servidor.' });
     }
 
-    const socketsDoAlvo = presencaGuild.get(r.channel.guildId)?.get(userId);
-    if (!socketsDoAlvo || socketsDoAlvo.size === 0) {
+    const registroDoAlvo = presencaGuild.get(r.channel.guildId)?.get(userId);
+    if (!registroDoAlvo || registroDoAlvo.sockets.size === 0) {
       return responde({ error: 'Essa pessoa não está online agora.' });
     }
 
@@ -432,7 +459,7 @@ io.on('connection', (socket) => {
       from: { id: eu.id, name: eu.name, avatar: eu.avatar },
       channel: { id: channelId, name: r.channel.name, guildId: r.channel.guildId }
     };
-    for (const socketId of socketsDoAlvo) io.to(socketId).emit('call-incoming', convite);
+    for (const socketId of registroDoAlvo.sockets) io.to(socketId).emit('call-incoming', convite);
     responde({ ok: true });
   });
 

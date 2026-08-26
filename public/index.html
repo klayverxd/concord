@@ -106,7 +106,7 @@
 <div id="app" class="app" hidden>
 
   <nav class="rail">
-    <div id="railHome" class="rail-icon is-active" title="Concord"><span id="railInitials" class="mono">CO</span></div>
+    <div id="railHome" class="rail-icon is-active mono" title="Concord">CO</div>
     <div class="rail-sep"></div>
     <button id="railCopy" class="rail-icon rail-btn" title="Copiar convite"><svg class="ico"><use href="#i-link"/></svg></button>
   </nav>
@@ -115,6 +115,7 @@
     <header class="side-head">
       <span id="roomName" class="side-room">—</span>
       <button id="copyBtn" class="side-head-btn" title="Copiar link do convite"><svg class="ico"><use href="#i-link"/></svg></button>
+      <button id="adminBtn" class="side-head-btn" title="Administrar servidor" hidden><svg class="ico"><use href="#i-gear"/></svg></button>
     </header>
 
     <div class="channels">
@@ -143,8 +144,10 @@
         </div>
         <button id="leaveBtn" class="vs-hangup" title="Desconectar"><svg class="ico"><use href="#i-hangup"/></svg></button>
       </div>
-      <button id="shareBtn" class="vs-share"><svg class="ico"><use href="#i-screen"/></svg><span>Transmitir tela</span></button>
-      <button id="cameraBtn" class="vs-share"><svg class="ico"><use href="#i-camera"/></svg><span>Ligar câmera</span></button>
+      <div class="vs-share-row">
+        <button id="shareBtn" class="vs-share" title="Transmitir tela"><svg class="ico"><use href="#i-screen"/></svg><span>Transmitir tela</span></button>
+        <button id="cameraBtn" class="vs-share" title="Ligar câmera"><svg class="ico"><use href="#i-camera"/></svg><span>Ligar câmera</span></button>
+      </div>
     </div>
 
     <div class="userbar">
@@ -157,7 +160,6 @@
       </button>
       <button id="micBtn" class="icon-btn" data-on="true" title="Microfone (Ctrl+M)"><svg class="ico"><use href="#i-mic"/></svg></button>
       <button id="deafBtn" class="icon-btn" data-on="true" title="Som geral (Ctrl+Shift+D)"><svg class="ico"><use href="#i-headset"/></svg></button>
-      <button id="adminBtn" class="icon-btn" title="Administrar servidor" hidden><svg class="ico"><use href="#i-users"/></svg></button>
       <button id="settingsBtn" class="icon-btn" title="Ajustes"><svg class="ico"><use href="#i-gear"/></svg></button>
     </div>
   </aside>
@@ -185,7 +187,10 @@
       <div class="stage-foot">
         <button id="stageShareBtn" class="btn btn-dark"><svg class="ico"><use href="#i-screen"/></svg><span id="stageShareLabel">Transmitir tela</span></button>
         <button id="stageCameraBtn" class="btn btn-dark"><svg class="ico"><use href="#i-camera"/></svg><span id="stageCameraLabel">Ligar câmera</span></button>
-        <button id="stageMicBtn" class="btn btn-dark" data-on="true"><svg class="ico"><use href="#i-mic"/></svg><span id="stageMicLabel">Microfone</span></button>
+        <div class="stage-foot-center">
+          <button id="stageMicBtn" class="btn btn-dark btn-icon-only" data-on="true" title="Microfone"><svg class="ico"><use href="#i-mic"/></svg></button>
+          <button id="stageDeafBtn" class="btn btn-dark btn-icon-only" data-on="true" title="Som geral"><svg class="ico"><use href="#i-headset"/></svg></button>
+        </div>
         <button id="stageLeaveBtn" class="btn btn-danger"><svg class="ico"><use href="#i-hangup"/></svg><span>Sair</span></button>
       </div>
     </section>

@@ -29,7 +29,7 @@ const el = {
   callBannerAccept: $('callBannerAccept'), callBannerDecline: $('callBannerDecline'),
   profilePop: $('profilePop'), profileAvatar: $('profileAvatar'), profileName: $('profileName'),
   profileStatus: $('profileStatus'), profileRoles: $('profileRoles'), profileCallBtn: $('profileCallBtn'),
-  railInitials: $('railInitials'), railCopy: $('railCopy'),
+  railHome: $('railHome'), railCopy: $('railCopy'),
   sidebar: $('sidebar'), roomName: $('roomName'), copyBtn: $('copyBtn'),
   voiceChannel: $('voiceChannel'), textChannel: $('textChannel'),
   liveBadge: $('liveBadge'), unreadPill: $('unreadPill'),
@@ -47,7 +47,7 @@ const el = {
   soundTest: $('soundTest'),
   stageShareBtn: $('stageShareBtn'), stageShareLabel: $('stageShareLabel'),
   stageCameraBtn: $('stageCameraBtn'), stageCameraLabel: $('stageCameraLabel'),
-  stageMicBtn: $('stageMicBtn'), stageMicLabel: $('stageMicLabel'),
+  stageMicBtn: $('stageMicBtn'), stageDeafBtn: $('stageDeafBtn'),
   stageLeaveBtn: $('stageLeaveBtn'),
 
   chatView: $('chatView'), log: $('log'), typing: $('typing'),
@@ -100,7 +100,8 @@ const state = {
   // Todo mundo do servidor (não só quem está numa chamada) e quem, entre
   // eles, está com o app aberto agora — o que a coluna da direita precisa
   // para mostrar online/offline de verdade em vez de só presença de voz.
-  guildMembers: new Map(), presentUserIds: new Set(),
+  // presentStatus guarda o status/recado de cada um (userId -> {status, note}).
+  guildMembers: new Map(), presentUserIds: new Set(), presentStatus: new Map(),
 
   me: null, room: null, name: null, socket: null, joined: false,
   mic: null,            // microfone cru vindo do getUserMedia
@@ -182,6 +183,20 @@ function paintAvatar(node, name, avatarSrc) {
   img.src = avatarSrc;
   img.onerror = () => { img.remove(); node.textContent = initialsFor(name); };
   node.appendChild(img);
+}
+
+/* O ícone do servidor no topo do rail — diferente de paintAvatar() porque
+ * sem foto ele usa o gradiente azul do .is-active (definido no CSS), não
+ * uma cor por hash do nome. */
+function pintarIconeServidor() {
+  el.railHome.textContent = '';
+  const src = state.guild?.icon;
+  if (!src) { el.railHome.textContent = initialsFor(state.guild.name); return; }
+  const img = document.createElement('img');
+  img.alt = '';
+  img.src = src;
+  img.onerror = () => { img.remove(); el.railHome.textContent = initialsFor(state.guild.name); };
+  el.railHome.appendChild(img);
 }
 
 function icon(id, cls) {
@@ -447,7 +462,7 @@ function mostrarEscolha() {
     b.type = 'button';
     const marca = document.createElement('span');
     marca.className = 'avatar';
-    paintAvatar(marca, g.name);
+    paintAvatar(marca, g.name, g.icon);
     const nome = document.createElement('strong');
     nome.textContent = g.name;
     b.append(marca, nome);
@@ -559,6 +574,7 @@ async function abrirServidor(guildId) {
   state.lastMsg = null;
   state.channelVoice.clear(); // roster de voz é por servidor; o de outro fica atrás
   state.presentUserIds.clear();
+  state.presentStatus.clear();
   renderMemberList();
   el.log.textContent = '';
   clearUnread();
@@ -571,7 +587,7 @@ async function abrirServidor(guildId) {
 
 function montarTela() {
   el.roomName.textContent = state.guild.name;
-  el.railInitials.textContent = initialsFor(state.guild.name);
+  pintarIconeServidor();
   el.meName.textContent = state.user.name;
   paintAvatar(el.meAvatar, state.user.name, state.user.avatar);
   document.title = `${state.guild.name} · Concord`;
@@ -865,13 +881,22 @@ function conectar() {
 
   // Presença de SERVIDOR (app aberto, dentro ou fora de qualquer canal de
   // voz) — o que a coluna "Online" usa para separar quem está de verdade
-  // conectado de quem só continua listado como membro do servidor.
-  socket.on('presence-join', ({ userId }) => {
+  // conectado de quem só continua listado como membro do servidor, com o
+  // status (disponível/ocupado/ausente/invisível) que colore a bolinha.
+  socket.on('presence-join', ({ userId, status, note }) => {
     state.presentUserIds.add(userId);
+    state.presentStatus.set(userId, { status, note });
     renderMemberList();
   });
   socket.on('presence-leave', ({ userId }) => {
     state.presentUserIds.delete(userId);
+    state.presentStatus.delete(userId);
+    renderMemberList();
+  });
+  // Só o status mudou (a pessoa continua online) — não mexe em quem está
+  // presente, só recolore a bolinha de quem já está na lista.
+  socket.on('presence-status', ({ userId, status, note }) => {
+    state.presentStatus.set(userId, { status, note });
     renderMemberList();
   });
 
@@ -938,7 +963,16 @@ function watchGuild(guildId) {
       pessoas.forEach((p) => mapa.set(p.id, p));
       renderRoster(chId);
     });
-    state.presentUserIds = new Set(r.presentes || []);
+    const presentes = r.presentes || [];
+    state.presentUserIds = new Set(presentes.map((p) => p.userId));
+    state.presentStatus = new Map(presentes.map((p) => [p.userId, { status: p.status, note: p.note }]));
+
+    // Entrar no servidor já registra a presença como 'online' no retrato
+    // acima — sem isso, o status de verdade (ausente, ocupado…) só chegava
+    // ao entrar na voz. O servidor avisa o resto com socket.to() (exclui
+    // quem mandou), então a própria linha na lista é corrigida aqui direto.
+    if (state.user) state.presentStatus.set(state.user.id, { status: state.status, note: state.note });
+    state.socket.emit('presence', { status: state.status, note: state.note });
     renderMemberList();
   });
 }
@@ -1368,6 +1402,11 @@ function itemMembro(m) {
   av.className = 'avatar';
   paintAvatar(av, m.name, m.avatar);
 
+  const dot = document.createElement('span');
+  dot.className = 'presence';
+  dot.dataset.status = online ? (state.presentStatus.get(m.id)?.status || 'online') : 'offline';
+  av.appendChild(dot);
+
   const nome = document.createElement('span');
   nome.className = 'member-name';
   nome.textContent = m.id === state.user?.id ? `${m.name} (você)` : m.name;
@@ -1434,7 +1473,7 @@ function atualizarPalco() {
   const naVoz = Boolean(state.voiceChannel);
   setShown(el.stageEmpty, !naVoz);
   el.tiles.hidden = !naVoz;
-  [el.stageShareBtn, el.stageCameraBtn, el.stageMicBtn, el.stageLeaveBtn, el.shareBtn, el.cameraBtn].forEach((b) => {
+  [el.stageShareBtn, el.stageCameraBtn, el.stageMicBtn, el.stageDeafBtn, el.stageLeaveBtn, el.shareBtn, el.cameraBtn].forEach((b) => {
     if (b) b.disabled = !naVoz;
   });
 }
@@ -1488,6 +1527,13 @@ function setStatus(id, auto) {
   }
   const me = state.members.get(state.me?.id);
   if (me) { me.status = id; paintMember(me.id); }
+  // O servidor avisa o resto do canal com socket.to() (exclui quem mandou),
+  // então a própria pessoa nunca veria a bolinha dela mudar na coluna da
+  // direita sem atualizar aqui direto, sem esperar a volta pelo servidor.
+  if (state.user) {
+    state.presentStatus.set(state.user.id, { status: id, note: state.note });
+    renderMemberList();
+  }
   state.socket?.emit('presence', { status: id, note: state.note });
   paintStatusList();
 }
@@ -1905,7 +1951,9 @@ function stopShare() {
 
 function paintShareButtons(live) {
   el.shareBtn.dataset.live = String(live);
-  el.shareBtn.querySelector('span').textContent = live ? 'Parar transmissão' : 'Transmitir tela';
+  const rotulo = live ? 'Parar transmissão' : 'Transmitir tela';
+  el.shareBtn.title = rotulo;
+  el.shareBtn.querySelector('span').textContent = rotulo;
   el.stageShareLabel.textContent = live ? 'Parar' : 'Transmitir tela';
   el.stageShareBtn.dataset.on = live ? 'false' : 'true';
   if (!live) esconderDicaAudioTela();
@@ -2133,7 +2181,9 @@ function stopCamera() {
 
 function paintCameraButtons(on) {
   el.cameraBtn.dataset.live = String(on);
-  el.cameraBtn.querySelector('span').textContent = on ? 'Parar câmera' : 'Ligar câmera';
+  const rotulo = on ? 'Parar câmera' : 'Ligar câmera';
+  el.cameraBtn.title = rotulo;
+  el.cameraBtn.querySelector('span').textContent = rotulo;
   el.stageCameraLabel.textContent = on ? 'Parar câmera' : 'Ligar câmera';
   el.stageCameraBtn.dataset.on = on ? 'false' : 'true';
 }
@@ -2708,11 +2758,13 @@ function setMic(on, comSom = false) {
   const mudou = track.enabled !== on;
   track.enabled = on;
 
+  const rotuloMic = on ? 'Microfone' : 'Mudo';
   el.micBtn.dataset.on = String(on);
   el.micBtn.querySelector('use').setAttribute('href', on ? '#i-mic' : '#i-mic-off');
+  el.micBtn.title = `${rotuloMic} (Ctrl+M)`;
   el.stageMicBtn.dataset.on = String(on);
   el.stageMicBtn.querySelector('use').setAttribute('href', on ? '#i-mic' : '#i-mic-off');
-  el.stageMicLabel.textContent = on ? 'Microfone' : 'Mudo';
+  el.stageMicBtn.title = rotuloMic;
 
   state.socket?.emit('state', { muted: !on });
   const me = state.members.get(state.me?.id);
@@ -2730,14 +2782,19 @@ function toggleMic() {
   setMic(!track.enabled, true);
 }
 
-el.deafBtn.addEventListener('click', toggleDeaf);
+[el.deafBtn, el.stageDeafBtn].forEach((b) => b.addEventListener('click', toggleDeaf));
 
 function toggleDeaf() {
   state.deaf = !state.deaf;
   // 'surdo'/'desurdo' furam a guarda de state.deaf em playSound() de propósito.
   playSound(state.deaf ? 'surdo' : 'desurdo');
+  const rotuloDeaf = state.deaf ? 'Ativar o som' : 'Som geral';
   el.deafBtn.dataset.on = String(!state.deaf);
   el.deafBtn.querySelector('use').setAttribute('href', state.deaf ? '#i-headset-off' : '#i-headset');
+  el.deafBtn.title = `${rotuloDeaf} (Ctrl+Shift+D)`;
+  el.stageDeafBtn.dataset.on = String(!state.deaf);
+  el.stageDeafBtn.querySelector('use').setAttribute('href', state.deaf ? '#i-headset-off' : '#i-headset');
+  el.stageDeafBtn.title = rotuloDeaf;
   applyAllVolumes();
 
   // Ficar surdo também silencia o próprio microfone, como manda o costume.
@@ -4017,8 +4074,19 @@ el.themeCheck.addEventListener('change', () => {
 
 /* admin.js é um arquivo separado para o app.js não crescer sem fim. Só o
  * que ele precisa passa por aqui — nada de vasculhar variável solta. */
+/** Depois de trocar o ícone do servidor (ou remover), atualiza o rail e o
+ * cache de state.guilds — para a lista de "escolher servidor" já vir
+ * certa se a pessoa voltar pra ela sem recarregar a página. */
+function aplicarNovoIcone(iconUrl) {
+  state.guild.icon = iconUrl;
+  const g = state.guilds.find((x) => x.id === state.guild.id);
+  if (g) g.icon = iconUrl;
+  pintarIconeServidor();
+}
+
 window.Concord = {
   state, api, toast, icon, paintAvatar, setShown,
+  redimensionarImagem, aplicarNovoIcone,
   redesenharCanais: () => { desenharCanais(); marcarAtivos(); }
 };
 

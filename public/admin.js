@@ -167,6 +167,50 @@
     }
     el.pane.appendChild(s);
 
+    const ic = secao('Ícone do servidor', 'Aparece no topo do menu e na lista de escolher servidor.');
+    const linhaIcon = elem('div', 'admin-linha');
+    const preview = elem('span', 'avatar avatar-lg');
+    C.paintAvatar(preview, dados.guild.name, dados.guild.icon);
+    linhaIcon.appendChild(preview);
+    if (podeVer(P.MANAGE_GUILD)) {
+      const fileInput = elem('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'image/*';
+      fileInput.hidden = true;
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        fileInput.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) return aviso('Escolha um arquivo de imagem.', 'erro');
+        aviso('Enviando…');
+        try {
+          const dataUri = await C.redimensionarImagem(file);
+          await C.api(`/guilds/${dados.guild.id}/icon`, { method: 'PATCH', body: JSON.stringify({ icon: dataUri }) });
+          await recarregar();
+          C.aplicarNovoIcone(dados.guild.icon);
+          C.paintAvatar(preview, dados.guild.name, dados.guild.icon);
+          aviso('Ícone salvo.', 'ok');
+        } catch (err) {
+          aviso(err.message || 'Não deu para enviar.', 'erro');
+        }
+      });
+      linhaIcon.append(
+        fileInput,
+        botao('Escolher foto', 'btn-dark', () => fileInput.click()),
+        botao('Remover', 'btn-dark', async () => {
+          await C.api(`/guilds/${dados.guild.id}/icon`, { method: 'PATCH', body: JSON.stringify({ icon: null }) });
+          await recarregar();
+          C.aplicarNovoIcone(dados.guild.icon);
+          C.paintAvatar(preview, dados.guild.name, dados.guild.icon);
+          aviso('Ícone removido.', 'ok');
+        })
+      );
+    } else {
+      linhaIcon.appendChild(elem('p', 'dica', 'Você não tem permissão para trocar o ícone.'));
+    }
+    ic.appendChild(linhaIcon);
+    el.pane.appendChild(ic);
+
     const p = secao('Suas permissões aqui', 'O que o servidor calculou para você agora.');
     const grade = elem('div', 'perm-grid');
     Object.entries(P).forEach(([nome2, bit]) => {
