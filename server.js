@@ -13,6 +13,7 @@
  * ------------------------------------------------------------------ */
 
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
@@ -41,6 +42,22 @@ if (config.isProd) app.set('trust proxy', 1);
  * 165 KB de texto puro. Atrás de proxy que já faz gzip é redundante, mas
  * em acesso direto corta para menos de um terço. */
 app.use(compression());
+
+/* O script de verificação/carregamento do AdSense precisa estar no HTML
+ * cru de "/", visível pro rastreador do Google sem passar por login nem
+ * rodar o app inteiro — é por isso que ele não pode vir só de dentro do
+ * app.js (que só executa depois da pessoa entrar). Ler o arquivo direto
+ * (sem cache em memória) porque é pouca coisa e evita servir versão
+ * velha depois de editar o index.html em dev. */
+app.get(['/', '/index.html'], (_req, res) => {
+  let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+  if (config.adsense.clientId) {
+    const tag = `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${config.adsense.clientId}" crossorigin="anonymous"></script>\n`;
+    html = html.replace('</head>', `${tag}</head>`);
+  }
+  res.set('Cache-Control', 'no-cache');
+  res.type('html').send(html);
+});
 
 /* `no-cache` não quer dizer "não guarde": quer dizer "pergunte antes de
  * usar". O navegador continua guardando e recebe 304 quando nada mudou.

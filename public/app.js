@@ -250,15 +250,10 @@ function montarAnuncio() {
     return;
   }
 
-  const loader = document.createElement('script');
-  loader.async = true;
-  loader.crossOrigin = 'anonymous';
-  loader.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(cfg.adsenseClientId)}`;
-  loader.onload = () => {
-    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (_) { /* AdSense já loga o próprio erro */ }
-  };
-  document.head.appendChild(loader);
-
+  // O script do AdSense (adsbygoogle.js) já vem carregado direto no
+  // <head> pelo servidor (server.js) — precisa estar lá, no HTML cru, pro
+  // rastreador do Google achar mesmo sem passar por login. Aqui só falta
+  // a unidade em si.
   const ins = document.createElement('ins');
   ins.className = 'adsbygoogle';
   ins.style.display = 'block';
@@ -268,6 +263,8 @@ function montarAnuncio() {
   ins.dataset.fullWidthResponsive = 'true';
   el.membersAd.appendChild(ins);
   setShown(el.membersAd, true);
+
+  try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (_) { /* AdSense já loga o próprio erro */ }
 }
 
 function icon(id, cls) {
