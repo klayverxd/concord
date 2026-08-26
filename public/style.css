@@ -37,6 +37,7 @@
   --online:  #3fa93f;
   --busy:    #d33b3b;
   --away:    #e0a021;
+  --volto:   #e8730f;
   --offline: #92a2b6;
 
   --green: var(--online);
@@ -83,6 +84,7 @@
   --online:  #34e07a;
   --busy:    #fb5b78;
   --away:    #fcb84a;
+  --volto:   #ff9d42;
   --offline: #6b7396;
 
   --glass: rgba(22, 27, 54, .82);
@@ -461,8 +463,8 @@ html, body {
   box-shadow: 0 0 8px rgba(52, 224, 122, .8);
 }
 .presence[data-status='ocupado'] { background: var(--busy); box-shadow: 0 0 8px rgba(251, 91, 120, .8); }
-.presence[data-status='volto'],
 .presence[data-status='ausente'] { background: var(--away); box-shadow: 0 0 8px rgba(252, 184, 74, .8); }
+.presence[data-status='volto'] { background: var(--volto); box-shadow: 0 0 8px rgba(232, 115, 15, .8); }
 .presence[data-status='invisivel'],
 .presence[data-status='offline'] { background: var(--offline); box-shadow: none; }
 
@@ -1050,6 +1052,8 @@ html, body {
 .emoji-btn:hover { background: var(--hover); }
 
 .status-pop { width: 250px; }
+.create-guild-pop { width: 240px; }
+.create-guild-pop .btn-block { margin-top: 12px; }
 .status-list { list-style: none; margin: 0; padding: 0; }
 .status-opt {
   display: flex; align-items: center; gap: 10px;

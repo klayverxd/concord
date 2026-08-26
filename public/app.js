@@ -29,8 +29,10 @@ const el = {
   callBannerAccept: $('callBannerAccept'), callBannerDecline: $('callBannerDecline'),
   profilePop: $('profilePop'), profileAvatar: $('profileAvatar'), profileName: $('profileName'),
   profileStatus: $('profileStatus'), profileRoles: $('profileRoles'), profileCallBtn: $('profileCallBtn'),
-  railHome: $('railHome'), railCopy: $('railCopy'),
-  sidebar: $('sidebar'), roomName: $('roomName'), copyBtn: $('copyBtn'),
+  railHome: $('railHome'), railCreate: $('railCreate'),
+  sidebar: $('sidebar'), roomName: $('roomName'),
+  createGuildPop: $('createGuildPop'), createGuildInput: $('createGuildInput'),
+  createGuildBtn: $('createGuildBtn'), createGuildError: $('createGuildError'),
   voiceChannel: $('voiceChannel'), textChannel: $('textChannel'),
   liveBadge: $('liveBadge'), unreadPill: $('unreadPill'),
   voiceMembers: $('voiceMembers'), membersPane: $('membersPane'),
@@ -45,8 +47,7 @@ const el = {
 
   stageView: $('stageView'), tiles: $('tiles'), stageEmpty: $('stageEmpty'),
   soundTest: $('soundTest'),
-  stageShareBtn: $('stageShareBtn'), stageShareLabel: $('stageShareLabel'),
-  stageCameraBtn: $('stageCameraBtn'), stageCameraLabel: $('stageCameraLabel'),
+  stageShareBtn: $('stageShareBtn'), stageCameraBtn: $('stageCameraBtn'),
   stageMicBtn: $('stageMicBtn'), stageDeafBtn: $('stageDeafBtn'),
   stageLeaveBtn: $('stageLeaveBtn'),
 
@@ -75,7 +76,7 @@ const el = {
   qualitySelect: $('qualitySelect'), pttCheck: $('pttCheck'), testBar: $('testBar'),
   testVoiceBtn: $('testVoiceBtn'),
   soundsCheck: $('soundsCheck'), notifyCheck: $('notifyCheck'), awayCheck: $('awayCheck'),
-  themeCheck: $('themeCheck'), toolNudge: $('toolNudge'), toolSound: $('toolSound'),
+  themeCheck: $('themeCheck'),
   noiseCheck: $('noiseCheck'),
   noiseSensitivityRow: $('noiseSensitivityRow'),
   noiseThresholdRange: $('noiseThresholdRange'),
@@ -137,7 +138,7 @@ const AVATAR_COLORS = ['#22d3ee', '#8b5cf6', '#e879f9', '#34e07a', '#fcb84a', '#
 const STATUSES = [
   { id: 'online',    label: 'Disponível',        color: 'var(--online)' },
   { id: 'ocupado',   label: 'Ocupado',           color: 'var(--busy)' },
-  { id: 'volto',     label: 'Volto logo',        color: 'var(--away)' },
+  { id: 'volto',     label: 'Volto logo',        color: 'var(--volto)' },
   { id: 'ausente',   label: 'Ausente',           color: 'var(--away)' },
   { id: 'invisivel', label: 'Aparecer invisível', color: 'var(--offline)' }
 ];
@@ -750,13 +751,18 @@ function renderRoster(channelId) {
 
     // No MESMO canal em que estou: clique ajusta o volume da pessoa (como
     // antes, só que agora a partir do roster). Em outro canal: abre o
-    // perfil, de onde dá para chamar a pessoa para esta chamada.
+    // perfil, de onde dá para chamar a pessoa para esta chamada. Passar o
+    // mouse sempre mostra o perfil, mesmo em quem está no meu canal — o
+    // clique continua reservado pro volume nesse caso.
     li.addEventListener('click', () => {
       if (p.userId === state.user?.id) return;
       if (channelId === state.voiceChannel?.id) return openVolume(p.id, li);
       const guildMember = state.guildMembers.get(p.userId);
       if (guildMember) abrirPerfil(guildMember, li);
     });
+    if (p.userId !== state.user?.id) {
+      ativarHoverPerfil(li, () => state.guildMembers.get(p.userId));
+    }
   });
   state.rosterMemberEls.set(channelId, avatares);
 }
@@ -921,7 +927,7 @@ function conectar() {
   socket.on('nudge', ({ id, name: who }) => {
     shakeScreen();
     playSound('zumbido');
-    if (id !== state.me?.id) system(`${who} mandou um zumbido`, 'in');
+    if (id !== state.me?.id) system(`${who} mandou uma cutucada`, 'in');
   });
 
   socket.on('soundboard', ({ name: who, label }) => system(`${who} tocou ${label}`, 'in'));
@@ -1287,7 +1293,7 @@ function buildNodes(m) {
   paintAvatar(tavatar, m.name, m.avatar);
 
   updateTiles();
-  return { tile, video, camVideo, viewersBox, tmute, tvolume, twatch };
+  return { tile, video, camVideo, viewersBox, tavatar, tmute, tvolume, twatch };
 }
 
 function paintMember(id) {
@@ -1414,6 +1420,7 @@ function itemMembro(m) {
   btn.append(av, nome);
   li.appendChild(btn);
   btn.addEventListener('click', () => abrirPerfil(m, btn));
+  ativarHoverPerfil(btn, () => m);
   return li;
 }
 
@@ -1461,6 +1468,37 @@ function abrirPerfil(m, anchor) {
   el.profilePop.style.left = `${Math.max(8, Math.min(r.left - pop.width - 8, innerWidth - pop.width - 8))}px`;
   el.profilePop.style.top = `${Math.max(8, Math.min(r.top, innerHeight - pop.height - 8))}px`;
 }
+
+/* Perfil também abre passando o mouse — sem precisar clicar — na coluna da
+ * direita e nos canais de voz. Um atraso pra abrir evita flash ao só
+ * passar o cursor de raspão; outro pra fechar dá tempo de mover até o
+ * próprio popup sem ele sumir no caminho. Se já está aberto (navegando de
+ * pessoa em pessoa), a troca é na hora — só a primeira espera. */
+let hoverPerfilAbre = null;
+let hoverPerfilFecha = null;
+
+function agendarAbrirPerfil(m, anchor) {
+  clearTimeout(hoverPerfilFecha);
+  clearTimeout(hoverPerfilAbre);
+  if (!el.profilePop.hidden) { abrirPerfil(m, anchor); return; }
+  hoverPerfilAbre = setTimeout(() => abrirPerfil(m, anchor), 350);
+}
+
+function agendarFecharPerfil() {
+  clearTimeout(hoverPerfilAbre);
+  hoverPerfilFecha = setTimeout(() => { el.profilePop.hidden = true; }, 200);
+}
+
+function ativarHoverPerfil(elemento, getMembro) {
+  elemento.addEventListener('mouseenter', () => {
+    const m = getMembro();
+    if (m) agendarAbrirPerfil(m, elemento);
+  });
+  elemento.addEventListener('mouseleave', agendarFecharPerfil);
+}
+
+el.profilePop.addEventListener('mouseenter', () => clearTimeout(hoverPerfilFecha));
+el.profilePop.addEventListener('mouseleave', agendarFecharPerfil);
 
 function updateTiles() {
   el.tiles.dataset.solo = String(el.tiles.children.length === 1 && !state.focused);
@@ -1954,7 +1992,7 @@ function paintShareButtons(live) {
   const rotulo = live ? 'Parar transmissão' : 'Transmitir tela';
   el.shareBtn.title = rotulo;
   el.shareBtn.querySelector('span').textContent = rotulo;
-  el.stageShareLabel.textContent = live ? 'Parar' : 'Transmitir tela';
+  el.stageShareBtn.title = rotulo;
   el.stageShareBtn.dataset.on = live ? 'false' : 'true';
   if (!live) esconderDicaAudioTela();
 }
@@ -2184,7 +2222,7 @@ function paintCameraButtons(on) {
   const rotulo = on ? 'Parar câmera' : 'Ligar câmera';
   el.cameraBtn.title = rotulo;
   el.cameraBtn.querySelector('span').textContent = rotulo;
-  el.stageCameraLabel.textContent = on ? 'Parar câmera' : 'Ligar câmera';
+  el.stageCameraBtn.title = rotulo;
   el.stageCameraBtn.dataset.on = on ? 'false' : 'true';
 }
 
@@ -2687,7 +2725,7 @@ function buildSoundTest() {
   const nomes = {
     conectou: 'você entrou', desconectou: 'você saiu',
     entrar: 'alguém entrou', sair: 'alguém saiu',
-    mensagem: 'mensagem', mencao: 'te chamaram', zumbido: 'zumbido',
+    mensagem: 'mensagem', mencao: 'te chamaram', zumbido: 'cutucada',
     mudo: 'mutou', desmudo: 'desmutou', surdo: 'ensurdeceu', desurdo: 'voltou a ouvir'
   };
   Object.entries(nomes).forEach(([id, rotulo]) => {
@@ -2718,25 +2756,23 @@ function buildSoundboard() {
   });
 }
 
-[el.soundBtn, el.toolSound].forEach((botao) => botao.addEventListener('click', (e) => {
+el.soundBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   if (!el.soundPop.hidden) return (el.soundPop.hidden = true);
   el.soundPop.hidden = false;
   if (isNarrow()) { el.soundPop.style.left = ''; el.soundPop.style.top = ''; return; }
 
-  // Ancora no botão que foi clicado — o do topo ou o da barra de ferramentas.
-  const r = botao.getBoundingClientRect();
+  const r = el.soundBtn.getBoundingClientRect();
   const pop = el.soundPop.getBoundingClientRect();
   el.soundPop.style.left = `${Math.max(8, Math.min(r.right - pop.width, innerWidth - pop.width - 8))}px`;
   el.soundPop.style.top = r.bottom + pop.height + 12 < innerHeight
     ? `${r.bottom + 8}px`
     : `${Math.max(8, r.top - pop.height - 8)}px`;
-}));
+});
 
-/* ------------------------------ zumbido ------------------------------ */
+/* ------------------------------ cutucada ------------------------------ */
 
-[el.nudgeBtn, el.toolNudge].forEach((b) =>
-  b.addEventListener('click', () => state.socket?.emit('nudge')));
+el.nudgeBtn.addEventListener('click', () => state.socket?.emit('nudge'));
 
 let shakeTimer = null;
 function shakeScreen() {
@@ -3563,7 +3599,8 @@ document.addEventListener('click', (e) => {
   if (!el.emojiPop.hidden && !inside(el.emojiPop, '#emojiBtn', '.msg-action')) el.emojiPop.hidden = true;
   if (!el.volumePop.hidden && !inside(el.volumePop, '.member', '.tile-volume', '.vmember')) el.volumePop.hidden = true;
   if (!el.statusPop.hidden && !inside(el.statusPop, '#meCard')) el.statusPop.hidden = true;
-  if (!el.soundPop.hidden && !inside(el.soundPop, '#soundBtn', '#toolSound')) el.soundPop.hidden = true;
+  if (!el.createGuildPop.hidden && !inside(el.createGuildPop, '#railCreate')) el.createGuildPop.hidden = true;
+  if (!el.soundPop.hidden && !inside(el.soundPop, '#soundBtn')) el.soundPop.hidden = true;
   if (!el.profilePop.hidden && !inside(el.profilePop, '.member', '.vmember')) el.profilePop.hidden = true;
 });
 
@@ -3870,6 +3907,12 @@ function aplicarNovoAvatar(avatarUrl) {
   paintAvatar(el.meAvatar, state.user.name, avatarUrl);
   renderMemberList();
   if (state.voiceChannel) meuRosterPatch({ avatar: avatarUrl });
+  // O quadro no palco é pintado uma vez só quando entra na chamada — sem
+  // isso, trocar a foto no meio de uma chamada deixava o quadro com a foto
+  // velha enquanto todo o resto (coluna da direita, roster, userbar) já
+  // tinha atualizado.
+  const meuQuadro = state.nodes.get(state.me?.id);
+  if (meuQuadro) paintAvatar(meuQuadro.tavatar, state.user.name, avatarUrl);
 }
 
 async function loadDevices() {
@@ -4021,26 +4064,39 @@ if (vv) {
   syncHeight();
 }
 
-/* Convite agora é um código gerado pelo servidor, com validade e limite de
- * usos — não mais um nome de sala que qualquer um adivinha. */
-[el.copyBtn, el.railCopy].forEach((b) => {
-  b.addEventListener('click', async () => {
-    if (!state.guild) return;
-    try {
-      const { invite } = await api(`/guilds/${state.guild.id}/invites`, {
-        method: 'POST', body: JSON.stringify({ hours: 24 * 7 })
-      });
-      const link = `${location.origin}${location.pathname}?convite=${invite.code}`;
-      try {
-        await navigator.clipboard.writeText(link);
-        toast(`Convite ${invite.code} copiado — vale 7 dias.`, 'ok');
-      } catch (_) {
-        toast(link, 'ok');
-      }
-    } catch (err) {
-      toast(err.message);
-    }
-  });
+/* Atalho do rail: criar servidor sem passar pela tela de escolher (que,
+ * se já tem um servidor aberto, pula direto de volta pra ele). */
+el.railCreate.addEventListener('click', (e) => {
+  e.stopPropagation();
+  el.createGuildError.textContent = '';
+  el.createGuildInput.value = '';
+  el.createGuildPop.hidden = false;
+  el.createGuildInput.focus();
+
+  if (isNarrow()) { el.createGuildPop.style.left = ''; el.createGuildPop.style.top = ''; return; }
+  const r = el.railCreate.getBoundingClientRect();
+  el.createGuildPop.style.left = `${r.right + 8}px`;
+  el.createGuildPop.style.top = `${Math.max(8, r.top)}px`;
+});
+
+async function criarServidorViaPopup() {
+  const name = el.createGuildInput.value.trim();
+  if (!name) return;
+  el.createGuildBtn.disabled = true;
+  el.createGuildError.textContent = '';
+  try {
+    const r = await api('/guilds', { method: 'POST', body: JSON.stringify({ name }) });
+    el.createGuildPop.hidden = true;
+    await abrirServidor(r.guild.id);
+  } catch (err) {
+    el.createGuildError.textContent = err.message;
+  } finally {
+    el.createGuildBtn.disabled = false;
+  }
+}
+el.createGuildBtn.addEventListener('click', criarServidorViaPopup);
+el.createGuildInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') criarServidorViaPopup();
 });
 
 /* Sair do canal de voz não é sair do servidor: a conversa continua e você
