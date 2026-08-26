@@ -396,12 +396,18 @@ html, body {
 .channel .ico { width: 18px; height: 18px; }
 .channel-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 
-.live-badge {
-  padding: 2px 7px; border-radius: 20px;
-  background: var(--busy); color: #fff;
-  font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  box-shadow: 0 0 14px rgba(251, 91, 120, .55);
+@keyframes live-badge-pulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(251, 91, 120, .55), 0 0 0 0 rgba(251, 91, 120, .5); }
+  50%      { box-shadow: 0 0 14px rgba(251, 91, 120, .55), 0 0 0 6px rgba(251, 91, 120, 0); }
 }
+.live-badge {
+  display: flex; align-items: center; gap: 3px;
+  padding: 2px 8px; border-radius: 20px;
+  background: var(--busy); color: #fff;
+  font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  animation: live-badge-pulse 1.6s ease-in-out infinite;
+}
+.live-badge-ico { width: 9px; height: 9px; }
 .unread-pill {
   min-width: 20px; padding: 1px 6px; border-radius: 20px;
   background: var(--grad); color: #080b18;

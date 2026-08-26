@@ -555,9 +555,12 @@ function itemCanal(canal) {
   b.appendChild(nome);
 
   if (canal.type === 'voice') {
+    // Não é só um aviso de "tem gente transmitindo" — é o convite explícito
+    // pra clicar e assistir, já que a transmissão não abre mais sozinha.
     const selo = document.createElement('span');
     selo.className = 'live-badge';
-    selo.textContent = 'ao vivo';
+    selo.appendChild(icon('i-play', 'live-badge-ico'));
+    selo.appendChild(document.createTextNode('Assistir'));
     setShown(selo, false);
     b.appendChild(selo);
     b.addEventListener('click', () => entrarNaVoz(canal.id));
