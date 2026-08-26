@@ -94,7 +94,7 @@ const store = {
 
 const state = {
   // conta e navegação
-  token: null, user: null, guilds: [], guild: null,
+  token: null, refreshToken: null, tokenExpiresAt: 0, user: null, guilds: [], guild: null,
   channels: [], roles: [], myPerms: '0',
   voiceChannel: null, textChannel: null,
   // Todo mundo do servidor (não só quem está numa chamada) e quem, entre
@@ -254,7 +254,7 @@ function micConstraints() {
  * cabeçalho Referer. Uma dependência a menos e um vazamento a menos. */
 let cfg = null;
 
-async function api(caminho, opcoes = {}) {
+async function api(caminho, opcoes = {}, viaRenovacao = false) {
   const res = await fetch(`/api${caminho}`, {
     ...opcoes,
     headers: {
@@ -264,7 +264,16 @@ async function api(caminho, opcoes = {}) {
     }
   });
   const corpo = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(corpo.error || `erro ${res.status}`);
+  if (!res.ok) {
+    // O token pode ter vencido com a aba em segundo plano — o navegador
+    // pausa temporizadores nesse estado, então a renovação programada não
+    // corre. Antes de jogar a pessoa pra tela de login, tenta renovar uma
+    // vez e repetir o pedido.
+    if (res.status === 401 && corpo.error === 'sessão expirada' && !viaRenovacao && state.refreshToken) {
+      if (await renovarToken()) return api(caminho, opcoes, true);
+    }
+    throw new Error(corpo.error || `erro ${res.status}`);
+  }
   return corpo;
 }
 
@@ -273,10 +282,78 @@ function tokenDoFragmento() {
   const p = new URLSearchParams(location.hash.slice(1));
   const token = p.get('access_token');
   if (token) {
+    state.refreshToken = p.get('refresh_token') || null;
+    const exp = Number(p.get('expires_in'));
+    state.tokenExpiresAt = exp ? Date.now() + exp * 1000 : 0;
     // Some da barra de endereço para não ficar em histórico nem em captura.
     history.replaceState(null, '', location.pathname + location.search);
   }
   return token;
+}
+
+function persistirToken() {
+  store.set('token', state.token || '');
+  store.set('refreshToken', state.refreshToken || '');
+  store.set('tokenExpiresAt', String(state.tokenExpiresAt || 0));
+}
+
+function limparToken() {
+  state.token = null;
+  state.refreshToken = null;
+  state.tokenExpiresAt = 0;
+  if (renovacaoTimer) clearTimeout(renovacaoTimer);
+  persistirToken();
+}
+
+let renovacaoTimer = null;
+let renovacaoEmAndamento = null;
+
+/* Troca o access_token vencido (ou perto de vencer) por um novo, usando o
+ * refresh_token que o Supabase entrega junto no login — sem isso, a sessão
+ * inteira caía a cada hora e pedia Google de novo do nada. Devolve false
+ * (nunca lança) sempre que não deu, pra quem chamou decidir o que fazer. */
+async function renovarToken() {
+  if (renovacaoEmAndamento) return renovacaoEmAndamento;
+  if (!state.refreshToken || !cfg?.supabaseUrl) return false;
+
+  renovacaoEmAndamento = (async () => {
+    try {
+      const res = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: cfg.supabaseAnonKey },
+        body: JSON.stringify({ refresh_token: state.refreshToken })
+      });
+      if (!res.ok) return false;
+      const dados = await res.json().catch(() => ({}));
+      if (!dados.access_token) return false;
+
+      state.token = dados.access_token;
+      // O Supabase gira o refresh_token a cada uso — guardar o antigo faria
+      // a próxima renovação falhar.
+      state.refreshToken = dados.refresh_token || state.refreshToken;
+      state.tokenExpiresAt = Date.now() + (Number(dados.expires_in) || 3600) * 1000;
+      persistirToken();
+      agendarRenovacao();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  })();
+
+  try { return await renovacaoEmAndamento; }
+  finally { renovacaoEmAndamento = null; }
+}
+
+/* Agenda a próxima renovação pra um minuto antes do token vencer — margem
+ * pra cobrir o tempo da troca em si sem gastar chamada à toa. Se a aba
+ * ficar em segundo plano e o navegador pausar o temporizador, o fallback
+ * reativo dentro de api() cobre o resto. */
+function agendarRenovacao() {
+  if (renovacaoTimer) clearTimeout(renovacaoTimer);
+  if (!state.tokenExpiresAt || !state.refreshToken) return;
+
+  const espera = Math.max(5000, state.tokenExpiresAt - Date.now() - 60000);
+  renovacaoTimer = setTimeout(renovarToken, espera);
 }
 
 el.googleBtn.addEventListener('click', () => {
@@ -288,7 +365,7 @@ el.googleBtn.addEventListener('click', () => {
 });
 
 el.logoutBtn.addEventListener('click', () => {
-  store.set('token', '');
+  limparToken();
   location.reload();
 });
 
@@ -296,7 +373,8 @@ async function iniciar() {
   /* Decidido de forma SÍNCRONA, antes de qualquer ida à rede: se não há
    * token guardado, a tela certa já é o login — e não pisca nada. Havendo
    * token, fica no "carregando" até saber se ele presta. */
-  const guardado = tokenDoFragmento() || store.get('token', '') || null;
+  const doFragmento = tokenDoFragmento(); // se veio do Google agora, já seta refreshToken/tokenExpiresAt
+  const guardado = doFragmento || store.get('token', '') || null;
   if (!guardado) mostrarLogin();
 
   try {
@@ -311,7 +389,14 @@ async function iniciar() {
   state.token = guardado;
   if (!state.token) return;   // já está na tela de login
 
-  store.set('token', state.token);
+  // Sessão retomada do localStorage (não veio agora do redirect do Google):
+  // recupera o refresh_token e o vencimento que tokenDoFragmento() não viu.
+  if (!doFragmento) {
+    state.refreshToken = store.get('refreshToken', '') || null;
+    state.tokenExpiresAt = Number(store.get('tokenExpiresAt', '0')) || 0;
+  }
+  persistirToken();
+  agendarRenovacao();
   gateBusy('Carregando sua conta…');
 
   let eu;
@@ -320,11 +405,13 @@ async function iniciar() {
   } catch (err) {
     /* Antes isto engolia o erro e dizia sempre "sua sessão venceu" — o que
      * escondeu por completo um token assinado com algoritmo que o servidor
-     * não aceitava. Agora o motivo real aparece. */
-    state.token = null;
+     * não aceitava. Agora o motivo real aparece.
+     * Chegar aqui com "expirada" já significa que api() tentou renovar
+     * sozinho e não conseguiu (sem refresh_token, ou ele também venceu). */
     const motivo = err.message || 'erro desconhecido';
     const venceu = /expirad|venceu|ausente|inválido|não existe/i.test(motivo);
-    if (venceu) store.set('token', '');   // só descarta o que de fato não serve
+    if (venceu) limparToken();   // só descarta o que de fato não serve
+    else state.token = null;
     return gateFail(venceu ? `${motivo} Entre de novo.` : `Não deu para entrar: ${motivo}`);
   }
 
@@ -679,12 +766,19 @@ function conectar() {
   }
 
   // O token vai no aperto de mão: socket sem sessão válida nem conecta.
-  const socket = io({ auth: { token: state.token }, timeout: 8000, reconnectionAttempts: 8 });
+  // Como função (não objeto fixo), cada tentativa de reconexão pega o
+  // state.token mais atual — essencial depois que renovarToken() troca ele
+  // no meio da sessão, sem isso o socket ficaria reenviando o token velho.
+  const socket = io({ auth: (cb) => cb({ token: state.token }), timeout: 8000, reconnectionAttempts: 8 });
   state.socket = socket;
 
-  socket.on('connect_error', (err) => {
+  socket.on('connect_error', async (err) => {
     if (/sess|token|autentic/i.test(err.message || '')) {
-      store.set('token', '');
+      // O token pode ter vencido com a aba em segundo plano. Tenta renovar
+      // antes de desistir — se der certo, a própria tentativa seguinte do
+      // socket.io já usa o token novo (a auth acima é lida de novo a cada vez).
+      if (await renovarToken()) return;
+      limparToken();
       return toast('Sua sessão venceu. Recarregue a página para entrar de novo.');
     }
     toast('Não foi possível falar com o servidor.');
