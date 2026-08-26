@@ -293,6 +293,22 @@ io.on('connection', (socket) => {
     io.to(to).emit('signal', { from: socket.id, description, candidate });
   });
 
+  /* Pedido de "assistir"/"parar de assistir" a transmissão de alguém do
+   * MESMO canal — quem transmite decide, par a par, pra quem manda o
+   * vídeo. Sem isso, transmitir pra uma sala cheia significava codificar
+   * o vídeo uma vez para cada pessoa, mesmo quem não estava olhando. */
+  socket.on('watch-stream', ({ to } = {}) => {
+    if (!to || typeof to !== 'string') return;
+    if (!mesmoCanal(socket.id, to)) return;
+    io.to(to).emit('watch-stream', { from: socket.id });
+  });
+
+  socket.on('stop-watch-stream', ({ to } = {}) => {
+    if (!to || typeof to !== 'string') return;
+    if (!mesmoCanal(socket.id, to)) return;
+    io.to(to).emit('stop-watch-stream', { from: socket.id });
+  });
+
   /* --------------------------- estado na voz --------------------------- */
 
   socket.on('state', async ({ muted, sharing, deaf, screenId } = {}) => {

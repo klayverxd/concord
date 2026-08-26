@@ -774,6 +774,8 @@ function conectar() {
   socket.on('call-incoming', (convite) => mostrarChamadaEntrante(convite));
 
   socket.on('signal', handleSignal);
+  socket.on('watch-stream', ({ from }) => comecarAAssistir(from));
+  socket.on('stop-watch-stream', ({ from }) => pararDeAssistir(from));
   socket.on('chat', (m) => renderMessage(m));
   socket.on('voice-note', (m) => renderMessage(m));
   socket.on('image', (m) => renderMessage(m));
@@ -1077,6 +1079,7 @@ function buildNodes(m) {
   });
 
   let tvolume = null;
+  let twatch = null;
   if (!m.mine) {
     tvolume = document.createElement('button');
     tvolume.className = 'tile-volume';
@@ -1090,6 +1093,31 @@ function buildNodes(m) {
       openVolume(m.id, tvolume);
     });
     tile.appendChild(tvolume);
+
+    // Ninguém recebe vídeo sem pedir — igual a lógica do outro lado
+    // (startShare/comecarAAssistir). Aparece por cima do avatar quando a
+    // pessoa está transmitindo e eu ainda não pedi pra ver.
+    twatch = document.createElement('button');
+    twatch.className = 'tile-watch';
+    twatch.type = 'button';
+    twatch.appendChild(icon('i-play'));
+    twatch.appendChild(document.createTextNode('Assistir'));
+    twatch.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.socket.emit('watch-stream', { to: m.id });
+    });
+    tile.appendChild(twatch);
+
+    const tstop = document.createElement('button');
+    tstop.className = 'tile-stop-watch';
+    tstop.type = 'button';
+    tstop.title = 'Parar de assistir';
+    tstop.appendChild(icon('i-x'));
+    tstop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.socket.emit('stop-watch-stream', { to: m.id });
+    });
+    tile.appendChild(tstop);
   }
 
   tile.addEventListener('click', () => {
@@ -1103,7 +1131,7 @@ function buildNodes(m) {
   paintAvatar(tavatar, m.name, m.avatar);
 
   updateTiles();
-  return { tile, video, tmute, tvolume };
+  return { tile, video, tmute, tvolume, twatch };
 }
 
 function paintMember(id) {
@@ -1114,6 +1142,7 @@ function paintMember(id) {
   // Estado de canal de voz: agora só no palco — a lista lateral por canal
   // é o roster (renderRoster), que não depende de sessão rica nenhuma.
   setShown(n.tmute, m.muted === true);
+  n.tile.dataset.sharing = String(m.sharing === true);
 }
 
 function refreshCount() {
@@ -1557,9 +1586,8 @@ function ensurePeer(id, name) {
   // Vai a mistura, não o microfone cru: assim trocar de microfone ou tocar
   // um som não mexe na faixa que os pares já estão recebendo.
   state.outStream.getAudioTracks().forEach((t) => pc.addTrack(t, state.outStream));
-  if (state.screen) {
-    state.screen.getTracks().forEach((t) => peer.screenSenders.push(pc.addTrack(t, state.screen)));
-  }
+  // A tela NÃO vai automaticamente pro par novo — só depois que ele pedir
+  // pra assistir (comecarAAssistir), pelo mesmo motivo do startShare().
 
   pc.onnegotiationneeded = async () => {
     try {
@@ -1674,9 +1702,10 @@ async function startShare() {
   }
 
   state.screen = stream;
-  state.peers.forEach((peer) => {
-    stream.getTracks().forEach((t) => peer.screenSenders.push(peer.pc.addTrack(t, stream)));
-  });
+  // Ninguém recebe o vídeo automaticamente — cada pessoa só passa a receber
+  // quando clica em "Assistir" na própria transmissão (comecarAAssistir).
+  // Sem isso, transmitir para uma sala com muita gente significa codificar
+  // o vídeo uma vez PARA CADA PESSOA, mesmo que ninguém esteja olhando.
 
   stream.getVideoTracks()[0].addEventListener('ended', stopShare);
   showVideo(state.me.id, stream);
@@ -1720,21 +1749,40 @@ function paintShareButtons(live) {
   el.stageShareBtn.dataset.on = live ? 'false' : 'true';
 }
 
+/* Do lado de quem transmite: alguém pediu pra assistir, ou parou de
+ * assistir. Cada par tem sua própria decisão — a mesma transmissão pode
+ * estar indo pra três pessoas e não pra outras duas no mesmo canal. */
+function comecarAAssistir(peerId) {
+  const peer = state.peers.get(peerId);
+  if (!peer || !state.screen || peer.screenSenders.length) return;
+  state.screen.getTracks().forEach((t) => peer.screenSenders.push(peer.pc.addTrack(t, state.screen)));
+}
+
+function pararDeAssistir(peerId) {
+  const peer = state.peers.get(peerId);
+  if (!peer) return;
+  peer.screenSenders.forEach((s) => { try { peer.pc.removeTrack(s); } catch (_) {} });
+  peer.screenSenders = [];
+}
+
 function receiveScreen(peer, track) {
   showVideo(peer.id, new MediaStream([track]));
-  const m = state.members.get(peer.id);
-  if (m) { m.sharing = true; paintMember(peer.id); }
   // Não força mais a ida pro palco — só acende o selo "ao vivo" no canal;
   // quem quiser assistir clica. Isso evita puxar quem está lendo o chat
   // de texto pra tela de voz sem pedir.
   updateLive();
 
-  track.addEventListener('ended', () => {
-    clearVideo(peer.id);
-    const mm = state.members.get(peer.id);
-    if (mm) { mm.sharing = false; paintMember(peer.id); }
-    updateLive();
-  });
+  // Quando eu paro de assistir (ou a pessoa muda quem pode ver), o outro
+  // lado faz removeTrack() — e isso NUNCA dispara 'ended' aqui: a track
+  // fica presa em muted=true/readyState='live' pra sempre. 'mute' é o
+  // evento certo pra saber que os dados pararam de chegar.
+  const aoPararDeChegar = () => { clearVideo(peer.id); updateLive(); };
+  track.addEventListener('mute', aoPararDeChegar);
+  track.addEventListener('ended', aoPararDeChegar);
+  // NÃO marca m.sharing = false em nenhum desses casos: pode ser só EU
+  // parando de assistir — a pessoa pode continuar transmitindo pra outras
+  // três no mesmo canal. Quem decide se ainda está transmitindo é o
+  // peer-state que vem do servidor, não este track.
 }
 
 function showVideo(id, stream) {

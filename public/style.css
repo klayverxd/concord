@@ -617,6 +617,35 @@ html, body {
 .tile[data-video='false'] .tile-volume { display: none; }
 .tile-volume[data-quiet='true'] { background: var(--busy); }
 
+/* "Assistir": só aparece quando a pessoa está transmitindo e eu ainda não
+ * pedi pra ver — é o que substitui a live abrindo sozinha pra todo mundo. */
+.tile-watch {
+  position: absolute; inset: 0; z-index: 2;
+  display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 100%;
+  border: 0; border-radius: inherit;
+  background: rgba(7, 9, 18, .6);
+  color: #fff; font-size: 14px; font-weight: 700;
+  cursor: pointer;
+}
+.tile-watch .ico { width: 36px; height: 36px; }
+.tile-watch:hover { background: rgba(7, 9, 18, .75); }
+.tile[data-sharing='true'][data-video='false'] .tile-watch { display: flex; }
+
+.tile-stop-watch {
+  position: absolute; top: 8px; right: 8px; z-index: 3;
+  display: none; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: 0; border-radius: 50%;
+  background: rgba(7, 9, 18, .7); color: #fff;
+  cursor: pointer; opacity: 0;
+  transition: opacity .15s;
+}
+.tile-stop-watch .ico { width: 13px; height: 13px; }
+.tile-stop-watch:focus-visible { opacity: 1; }
+.tile:hover .tile-stop-watch { opacity: 1; }
+.tile[data-video='true'] .tile-stop-watch { display: flex; }
+
 .tiles[data-focus='true'] {
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   grid-template-rows: minmax(0, 1fr) 84px;
